@@ -1,47 +1,229 @@
-/*M!999999\- enable the sandbox mode */ 
--- MariaDB dump 10.20-11.8.9-MariaDB, for debian-linux-gnu (x86_64)
+-- Student housing database for Azure SQL Database (Microsoft SQL Server / T-SQL)
+-- Converted from Razvan's MariaDB dump (student_housing.sql).
+-- Safe to run more than once: it drops and recreates every table.
 --
--- Host: localhost    Database: student_housing
--- ------------------------------------------------------
--- Server version	11.8.9-MariaDB-2 from Debian
+-- Changes from the MariaDB version:
+--   * table `user` is now [users] (USER is a reserved word in SQL Server)
+--   * users.passwords is now users.password_hash (store hashes only)
+--   * house.adress is now house.address
+--   * the 3 empty bills rows (house_id 0) are removed
+--   * houses 1-20 are filled in from Properties.csv so bills/records can use foreign keys
+--   * bills has UNIQUE (house_id, year, month)
 
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8mb4 */;
-/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-/*!40103 SET TIME_ZONE='+00:00' */;
-/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-/*M!100616 SET @OLD_NOTE_VERBOSITY=@@NOTE_VERBOSITY, NOTE_VERBOSITY=0 */;
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
 
---
--- Table structure for table `bills`
---
+DROP TABLE IF EXISTS [ticket_note], [photo], [maintenance_ticket], [notification],
+    [expense_share], [expense], [grocery_item], [chore_assignment], [chore],
+    [records], [bills], [tenant], [house], [technician], [property_manager], [users];
 
-DROP TABLE IF EXISTS `bills`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `bills` (
-  `ID` int(11) NOT NULL AUTO_INCREMENT,
-  `house_id` int(11) NOT NULL,
-  `year` smallint(6) NOT NULL,
-  `month` tinyint(4) NOT NULL,
-  `gas` decimal(10,2) DEFAULT NULL,
-  `electricity_bill` decimal(10,2) DEFAULT NULL,
-  PRIMARY KEY (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=1044 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+CREATE TABLE [users] (
+    [user_id]       int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [name]          nvarchar(100) NOT NULL,
+    [email]         nvarchar(255) NOT NULL CONSTRAINT [UQ_users_email] UNIQUE,
+    [password_hash] varchar(255)  NOT NULL,
+    [role]          varchar(20)   NOT NULL
+        CONSTRAINT [CK_users_role] CHECK ([role] IN ('tenant','technician','property_manager'))
+);
 
---
--- Dumping data for table `bills`
---
+CREATE TABLE [property_manager] (
+    [user_id] int NOT NULL PRIMARY KEY
+        CONSTRAINT [FK_property_manager_users] REFERENCES [users]([user_id]) ON DELETE CASCADE
+);
 
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `bills` WRITE;
-/*!40000 ALTER TABLE `bills` DISABLE KEYS */;
-INSERT INTO `bills` VALUES
+CREATE TABLE [technician] (
+    [user_id]   int NOT NULL PRIMARY KEY
+        CONSTRAINT [FK_technician_users] REFERENCES [users]([user_id]) ON DELETE CASCADE,
+    [specialty] nvarchar(100) NULL
+);
+
+CREATE TABLE [house] (
+    [house_id]   int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [manager_id] int NOT NULL
+        CONSTRAINT [FK_house_property_manager] REFERENCES [property_manager]([user_id]),
+    [name]       nvarchar(100) NOT NULL,
+    [address]    nvarchar(255) NOT NULL
+);
+CREATE INDEX [IX_house_manager_id] ON [house]([manager_id]);
+
+CREATE TABLE [tenant] (
+    [user_id]     int NOT NULL PRIMARY KEY
+        CONSTRAINT [FK_tenant_users] REFERENCES [users]([user_id]) ON DELETE CASCADE,
+    [house_id]    int NOT NULL
+        CONSTRAINT [FK_tenant_house] REFERENCES [house]([house_id]),
+    [room_number] nvarchar(10) NULL
+);
+CREATE INDEX [IX_tenant_house_id] ON [tenant]([house_id]);
+
+CREATE TABLE [bills] (
+    [ID]               int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [house_id]         int NOT NULL
+        CONSTRAINT [FK_bills_house] REFERENCES [house]([house_id]),
+    [year]             smallint NOT NULL,
+    [month]            tinyint  NOT NULL CONSTRAINT [CK_bills_month] CHECK ([month] BETWEEN 1 AND 12),
+    [gas]              decimal(10,2) NULL,
+    [electricity_bill] decimal(10,2) NULL,
+    CONSTRAINT [UQ_bills_house_year_month] UNIQUE ([house_id], [year], [month])
+);
+
+-- Personal data in records is encrypted by the application (iv + ciphertext); stored as raw bytes.
+CREATE TABLE [records] (
+    [id]              int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [house_id]        int NOT NULL
+        CONSTRAINT [FK_records_house] REFERENCES [house]([house_id]),
+    [room_id]         int NOT NULL,
+    [student_id]      int NOT NULL,
+    [start_year]      smallint NOT NULL,
+    [end_year]        smallint NOT NULL,
+    [iv]              binary(16)     NULL,
+    [student_name]    varbinary(256) NULL,
+    [student_surname] varbinary(256) NULL,
+    [email]           varbinary(512) NULL,
+    [phone_number]    varbinary(128) NULL
+);
+CREATE INDEX [IX_records_house_id] ON [records]([house_id]);
+
+CREATE TABLE [chore] (
+    [chore_id]  int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [house_id]  int NOT NULL
+        CONSTRAINT [FK_chore_house] REFERENCES [house]([house_id]) ON DELETE CASCADE,
+    [title]     nvarchar(100) NOT NULL,
+    [area]      nvarchar(50) NULL,
+    [frequency] varchar(10) NOT NULL
+        CONSTRAINT [CK_chore_frequency] CHECK ([frequency] IN ('DAILY','WEEKLY','BIWEEKLY','MONTHLY'))
+);
+CREATE INDEX [IX_chore_house_id] ON [chore]([house_id]);
+
+CREATE TABLE [chore_assignment] (
+    [assignment_id] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [chore_id]      int NOT NULL
+        CONSTRAINT [FK_chore_assignment_chore] REFERENCES [chore]([chore_id]) ON DELETE CASCADE,
+    [tenant_id]     int NOT NULL
+        CONSTRAINT [FK_chore_assignment_tenant] REFERENCES [tenant]([user_id]) ON DELETE CASCADE,
+    [due_date]      date NOT NULL,
+    [is_done]       bit  NOT NULL DEFAULT 0,
+    [completed_at]  datetime2 NULL
+);
+CREATE INDEX [IX_chore_assignment_chore_id]  ON [chore_assignment]([chore_id]);
+CREATE INDEX [IX_chore_assignment_tenant_id] ON [chore_assignment]([tenant_id]);
+
+CREATE TABLE [expense] (
+    [expense_id]  int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [paid_by]     int NOT NULL
+        CONSTRAINT [FK_expense_tenant] REFERENCES [tenant]([user_id]),
+    [description] nvarchar(255) NULL,
+    [amount]      decimal(10,2) NOT NULL,
+    [date]        date NOT NULL
+);
+CREATE INDEX [IX_expense_paid_by] ON [expense]([paid_by]);
+
+CREATE TABLE [expense_share] (
+    [expense_id]  int NOT NULL
+        CONSTRAINT [FK_expense_share_expense] REFERENCES [expense]([expense_id]) ON DELETE CASCADE,
+    [tenant_id]   int NOT NULL
+        CONSTRAINT [FK_expense_share_tenant] REFERENCES [tenant]([user_id]),
+    [amount_owed] decimal(10,2) NOT NULL,
+    [is_settled]  bit NOT NULL DEFAULT 0,
+    CONSTRAINT [PK_expense_share] PRIMARY KEY ([expense_id], [tenant_id])
+);
+CREATE INDEX [IX_expense_share_tenant_id] ON [expense_share]([tenant_id]);
+
+CREATE TABLE [grocery_item] (
+    [item_id]   int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [house_id]  int NOT NULL
+        CONSTRAINT [FK_grocery_item_house] REFERENCES [house]([house_id]) ON DELETE CASCADE,
+    [name]      nvarchar(100) NOT NULL,
+    [quantity]  int NOT NULL DEFAULT 1,
+    [is_bought] bit NOT NULL DEFAULT 0
+);
+CREATE INDEX [IX_grocery_item_house_id] ON [grocery_item]([house_id]);
+
+CREATE TABLE [maintenance_ticket] (
+    [ticket_id]     int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [house_id]      int NOT NULL
+        CONSTRAINT [FK_maintenance_ticket_house] REFERENCES [house]([house_id]),
+    [reported_by]   int NOT NULL
+        CONSTRAINT [FK_maintenance_ticket_tenant] REFERENCES [tenant]([user_id]),
+    [technician_id] int NULL
+        CONSTRAINT [FK_maintenance_ticket_technician] REFERENCES [technician]([user_id]) ON DELETE SET NULL,
+    [title]         nvarchar(100) NOT NULL,
+    [description]   nvarchar(max) NULL,
+    [location]      nvarchar(100) NULL,
+    [category]      nvarchar(50) NULL,
+    [urgency]       varchar(10) NOT NULL DEFAULT 'MEDIUM'
+        CONSTRAINT [CK_maintenance_ticket_urgency] CHECK ([urgency] IN ('LOW','MEDIUM','HIGH')),
+    [status]        varchar(12) NOT NULL DEFAULT 'OPEN'
+        CONSTRAINT [CK_maintenance_ticket_status] CHECK ([status] IN ('OPEN','ASSIGNED','IN_PROGRESS','RESOLVED')),
+    [created_at]    datetime2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX [IX_maintenance_ticket_house_id]      ON [maintenance_ticket]([house_id]);
+CREATE INDEX [IX_maintenance_ticket_reported_by]   ON [maintenance_ticket]([reported_by]);
+CREATE INDEX [IX_maintenance_ticket_technician_id] ON [maintenance_ticket]([technician_id]);
+
+CREATE TABLE [photo] (
+    [photo_id]  int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [ticket_id] int NOT NULL
+        CONSTRAINT [FK_photo_ticket] REFERENCES [maintenance_ticket]([ticket_id]) ON DELETE CASCADE,
+    [url]       nvarchar(255) NOT NULL
+);
+CREATE INDEX [IX_photo_ticket_id] ON [photo]([ticket_id]);
+
+CREATE TABLE [ticket_note] (
+    [note_id]    int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [ticket_id]  int NOT NULL
+        CONSTRAINT [FK_ticket_note_ticket] REFERENCES [maintenance_ticket]([ticket_id]) ON DELETE CASCADE,
+    [text]       nvarchar(max) NOT NULL,
+    [created_at] datetime2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX [IX_ticket_note_ticket_id] ON [ticket_note]([ticket_id]);
+
+CREATE TABLE [notification] (
+    [notification_id] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [user_id]         int NOT NULL
+        CONSTRAINT [FK_notification_users] REFERENCES [users]([user_id]) ON DELETE CASCADE,
+    [message]         nvarchar(255) NOT NULL,
+    [is_read]         bit NOT NULL DEFAULT 0,
+    [created_at]      datetime2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX [IX_notification_user_id] ON [notification]([user_id]);
+
+-- One property manager so the houses have an owner (John Doe, from Student Housing Employees.csv).
+-- password_hash '!' is a placeholder that no password can match: set a real hash before logging in as him.
+SET IDENTITY_INSERT [users] ON;
+INSERT INTO [users] ([user_id], [name], [email], [password_hash], [role]) VALUES
+(1, N'John Doe', N'john@studenthousing.com', '!', 'property_manager');
+SET IDENTITY_INSERT [users] OFF;
+INSERT INTO [property_manager] ([user_id]) VALUES (1);
+
+-- Houses 1-20 from Properties.csv (bills and records refer to these IDs)
+SET IDENTITY_INSERT [house] ON;
+INSERT INTO [house] ([house_id], [manager_id], [name], [address]) VALUES
+(1, 1, N'Keizersgracht 123', N'Keizersgracht 123, Amsterdam'),
+(2, 1, N'Prinsengracht 456', N'Prinsengracht 456, Amsterdam'),
+(3, 1, N'Herengracht 789', N'Herengracht 789, Amsterdam'),
+(4, 1, N'Singel 101', N'Singel 101, Amsterdam'),
+(5, 1, N'Damstraat 12', N'Damstraat 12, Amsterdam'),
+(6, 1, N'Leidseplein 34', N'Leidseplein 34, Amsterdam'),
+(7, 1, N'Rembrandtplein 56', N'Rembrandtplein 56, Amsterdam'),
+(8, 1, N'Jordaan 78', N'Jordaan 78, Amsterdam'),
+(9, 1, N'Vondelparklaan 90', N'Vondelparklaan 90, Amsterdam'),
+(10, 1, N'Oudezijds Voorburgwal 112', N'Oudezijds Voorburgwal 112, Amsterdam'),
+(11, 1, N'Coolsingel 1', N'Coolsingel 1, Rotterdam'),
+(12, 1, N'Blaak 10', N'Blaak 10, Rotterdam'),
+(13, 1, N'Witte de Withstraat 22', N'Witte de Withstraat 22, Rotterdam'),
+(14, 1, N'Erasmusbrug 33', N'Erasmusbrug 33, Rotterdam'),
+(15, 1, N'Kop van Zuid 44', N'Kop van Zuid 44, Rotterdam'),
+(16, 1, N'Vismarkt 5', N'Vismarkt 5, Groningen'),
+(17, 1, N'Folkingestraat 11', N'Folkingestraat 11, Groningen'),
+(18, 1, N'Grote Markt 20', N'Grote Markt 20, Groningen'),
+(19, 1, N'Herestraat 30', N'Herestraat 30, Groningen'),
+(20, 1, N'Hoornsemeerweg 55', N'Hoornsemeerweg 55, Groningen');
+SET IDENTITY_INSERT [house] OFF;
+
+-- 1040 bills rows (the 3 empty house_id 0 rows, IDs 209, 522, 783, are left out)
+SET IDENTITY_INSERT [bills] ON;
+INSERT INTO [bills] ([ID], [house_id], [year], [month], [gas], [electricity_bill]) VALUES
 (1,1,2020,1,75.00,50.00),
 (2,1,2020,2,80.00,55.00),
 (3,1,2020,3,70.00,45.00),
@@ -250,7 +432,6 @@ INSERT INTO `bills` VALUES
 (206,4,2024,2,330.00,305.00),
 (207,4,2024,3,335.00,310.00),
 (208,4,2024,4,340.00,315.00),
-(209,0,0,0,0.00,0.00),
 (210,5,2020,1,95.00,70.00),
 (211,5,2020,2,100.00,75.00),
 (212,5,2020,3,105.00,80.00),
@@ -563,7 +744,6 @@ INSERT INTO `bills` VALUES
 (519,10,2024,2,365.00,340.00),
 (520,10,2024,3,370.00,345.00),
 (521,10,2024,4,375.00,350.00),
-(522,0,0,0,0.00,0.00),
 (523,11,2020,1,140.00,115.00),
 (524,11,2020,2,145.00,120.00),
 (525,11,2020,3,150.00,125.00),
@@ -824,7 +1004,6 @@ INSERT INTO `bills` VALUES
 (780,15,2024,2,405.00,380.00),
 (781,15,2024,3,410.00,385.00),
 (782,15,2024,4,415.00,390.00),
-(783,0,0,0,0.00,0.00),
 (784,16,2020,1,100.00,80.00),
 (785,16,2020,2,105.00,85.00),
 (786,16,2020,3,110.00,90.00),
@@ -1044,7 +1223,8 @@ INSERT INTO `bills` VALUES
 (1000,20,2020,9,105.00,95.00),
 (1001,20,2020,10,110.00,100.00),
 (1002,20,2020,11,115.00,105.00),
-(1003,20,2020,12,120.00,110.00),
+(1003,20,2020,12,120.00,110.00);
+INSERT INTO [bills] ([ID], [house_id], [year], [month], [gas], [electricity_bill]) VALUES
 (1004,20,2021,1,125.00,115.00),
 (1005,20,2021,2,130.00,120.00),
 (1006,20,2021,3,135.00,125.00),
@@ -1085,515 +1265,43 @@ INSERT INTO `bills` VALUES
 (1041,20,2024,2,145.00,135.00),
 (1042,20,2024,3,150.00,140.00),
 (1043,20,2024,4,155.00,145.00);
-/*!40000 ALTER TABLE `bills` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+SET IDENTITY_INSERT [bills] OFF;
 
---
--- Table structure for table `chore`
---
+-- 29 records rows (encrypted columns as hex)
+SET IDENTITY_INSERT [records] ON;
+INSERT INTO [records] ([id], [house_id], [room_id], [student_id], [start_year], [end_year], [iv], [student_name], [student_surname], [email], [phone_number]) VALUES
+(1,1,1,101,2020,2021,0x85EC3665F7DABB663F1D96F59EC1962B,0x893C9682731EB5B46001A17B64EBBBED,0x72F3A0914704E3A0445BDF1EAF20BD14,0x3CC54851616AA74EE5FB727E2BB7466570B65FC286228B4513EEACC777891375,0x7A4363B1724B620DD26E483158E2C238),
+(2,1,2,205,2022,2023,0xC066D9190C62305AC3416B754ADFDDE0,0xF75C9F1C43DE535C4B2E5FA317743378,0xC0A91FEE329D836066937000BD80DA93,0xD1BF87130E4D2BA3292578CD14A0CD8CEDC5B78A38A666E16B284736A5CAFF94,0x0822C5FEAC79A900CF108CB4957C536A),
+(4,2,1,102,2021,2022,0xB956BA629FAD17D4BBCEB8B0CE8151BC,0x425B27E33F919355EED9DABD9977A374,0x73D7B6503A13213DEF2F0336DEAB8C89,0xA45C0FE3D6B5A10EB3EFA8299ACF81BE09C488245EAEF982331588250CFD6D18,0x96632E89FA7B5F07D3801A4D24DE1201),
+(5,2,2,206,2023,2024,0xD26E568A1CF3A0F466F4AFED883B2A3E,0x1D5B42519274B62C685C3C6C4AB1082D,0xB98068F116F7975422F04AF5B4D67E8F,0xACB64E05B99C99A7D11FD59C3720E67C1B3D5B951A93CB497005969F431C2210,0xE25E63421904E63733BCFAF94511D501),
+(6,3,1,103,2020,2021,0x91900906057FAC82425A67FDAF08FA58,0x3FF26D9EFB10DE3B0110099A63EBEB69,0x53DCA95C95401C76D640E063144F93ED,0x8E2E3AED807131E39CBFEF1E4919FC5D74181292A69F178AA5DD43F438F989A4,0x839E933473C744D832AC3AE8137B4F51),
+(7,3,2,207,2022,2023,0x227527C650DC4989C3DAC6F2E09B3B94,0x83FD5BD444DCCFED5853D7529E4099D1,0x45D4EEC91CE5D1C4DD6519F0B8DA34F8,0xE11FBC28CF60F65E09E39A152431E17717F9A71A04C3FD4DE04CBBEC238C47D0,0x24C525C047E46A865520988EFD718426),
+(9,4,1,104,2021,2022,0xB449E2322B046D062501958EA405243B,0x9C9BF93F157C76C3DF5119BAEA849CF3,0xB7641386AC75BF2B980A122D6F4D7A17,0x2EB07D4E902CAF4FD471A7E0E982E06CF174460D534EC0CDC3F5C84ED9938AB7,0xAE7B5641C8E2F8479FBC8C43D01BAEE9),
+(10,5,1,105,2020,2021,0xCD80AA418D67547D4F158B1EA86CAFC1,0x28BF4CA8C963982476B2DC36A624E241,0x3A3C403C04C034190A9A465824E27626,0x3D16D690B744946C8A36BC2931FCEF62D56D2CF6FA1E627299D36E08C5220AF6,0x18F33C47A4C7654A29F561C25AC7F76D),
+(11,5,2,208,2023,2024,0xCE5037EF9898D0D2054D70590320887B,0x94E2D4327238442874E20C0EEFFB29B5,0xCDDBCF832DAF2D9C7AA15E2EF3A79C09,0xE29F91B6FCD63F4D54A75C3B7AAF5FACAF60BCA72FC1B029C53566C4BE2E2E71,0x9972DE22E7B8AA14F07496318AC01C85),
+(13,6,1,106,2022,2023,0xB70B8AAC202A5D00B7E1ACC0CC314C41,0x1650903F31BF78A44A893044D9AF14C2,0xFED55A92EEE43E97B2DD10BFCC222895,0x1CD4B99E0E7B7921EB55231B27E7F3BC6D5576049215CEA09FE05A1802547738,0x8812B30456150C99906BD888AD65532F),
+(14,7,1,107,2020,2021,0xA55FB97EEDE06C835504BB661D27222D,0x358C49269DF40F56AF8C5BEDD80712F6,0xA4713AC221550414EC826DE2436A04D4,0x0EBAC26CF6B74AED30A857037FE5AF059CD560F512772A7E3A24BC139DE5538A,0xBD6DB7E300207A7414460C2DB6A3B22E),
+(15,7,2,209,2022,2023,0x6D34A507BF4AC02E1B906E56AFDFF34E,0x60E2BDA0BA8113BE062FE070C29F6550,0x1072ACB3E9814AFFD13E553B1E981A03,0xDF08BA9EA9616BDF25D475708C3349ACC568FC2EFBD44E62AE30E8D14E01C429,0x77BE5B988228C1A4C7975FF412203393),
+(17,8,1,108,2021,2022,0x163D3EDAA15610246A8AE8639EA95F7A,0x5477F2025A8D2E58A7B35BE56F699AF8,0xAF0B029A70201EF4C50454084BB355E7,0x72AA62BCF8461B11F9512489C024DB0829E20B8BAA45B2A946DE2BEFBB87613D,0x9BACC8E8800EF2E0D805D31E2268CF6C),
+(18,9,1,109,2020,2021,0x106A088E33CB3C86FAE7E6CEFFC1DAAB,0xE24B61D1A997E00F5373570C109CF810,0x1FD11E8786C20130979EEBF59CDB6BEB,0xFE0C05ABA1EBA7818A27DEEE902763FCA6DD1462B0B9242E20532EA5614127F7,0x56BD3B91F0A361B04512F96B25729D9F),
+(19,10,1,110,2021,2022,0x98088DA2F6F60CA86E5A53F8F67FA226,0xE9240CB1CF6FC5C0E123950DD8673ACE,0x7A2A1AE95747861CA8771CDC3BFC7632,0x9B406DC266D3B8A98C7E7FFBA0570573DE42CAC960BEB91773BC2D29B8F98919,0xD9BBEE6FA8BE35BE102604D59BB2D181),
+(20,11,1,111,2020,2021,0x147AF698A5387F6FF3D8FB1B4771CF07,0xC81D3DCE6ABBEF4A0B4125DDB456A387,0x8BCA8F7DD71E1848485179CADE7A2D97,0x0397CB5C5847B5D6131B9008CD3D0EBB577FE050E9CA58C651B0FAFAF2ACB001,0x9F314E95564EB91C0668725FAE912423),
+(21,11,2,210,2023,2024,0xE6D4E7C222BBAA088FD67EF325A6C93D,0x12AFC62BD909E9F0EA80216515BCB010,0x1B327740D91CD3AF69471F1BB6AF43EC,0xA28E28EFB74BD2E87B9D53AEBAD95A14F56DE0AFC746315FF286D876DE98700C,0xFE12AD1E93561DC721C9AEB338FD3B2A),
+(22,12,1,112,2021,2022,0x5F0598CBD396D3E985FF9791FF1A5AA9,0x29A22504B027869DB5B685FD4FB84AA5,0x2EAF50944858175107BA8DB9751A5F12,0x710E0450B021624BB2B109F1D368BD1A278A74CE2AA2BD1FF8F613DD3B86B0DE,0xD8B5E32F8D3D9DB58FE66A1EA7F06696),
+(23,13,1,113,2020,2021,0xA5765FDC08D744465E53886824A1F765,0x72E5BA3C4B0786543B4A0C45FE5C128D,0xC58985E9DF2BBF3D40E138A9D9229C45,0xBA6886BA3AA04B5DF5670592BF20F6A228DCE618B25DF4A4B659178328D81F94,0xD381234D4DC47045265510D5A1932730),
+(24,13,2,211,2022,2023,0xE55235B0B015314056349079F17C5C1C,0x50E16EA35ECAD893FF90A62E9E497F3C,0xC2278B1342442A7362CEA61EFD55AA3C,0x3EAE7B7E92EE76AD617C2DD8F85B770A6585367B8160A5A2991E3FD77C193E3C,0x75C32E15A5F836999D98074D8BF8F2CD),
+(26,14,1,114,2021,2022,0x9882F4CCA1969A611912801038D9DC04,0x930329DB1E808F3CFBA694BBF48320F1,0x76F4EC4B25FF8C6F4457B2FCD49ADF0B,0x53F91F2BE3552A531444D373A185A857A1117257B12EA0B384B507E405A5DA39,0x104B25B8AAB329E6C59831C87CEC935A),
+(27,15,1,115,2020,2021,0x8FA116F8629703F84854AC38B1F9AFB6,0x1FCFA19AFCB6F1FCF3FE08BDF5B20AF5,0x3938858E4460E0A18DB5885E310D8A81,0x42B7F40192280D9271468D5D93E236E5985C4F82A178993CBD9EDD58A6DBF19C,0x2802AE7F69D15B4A8849E24B0DC140D3),
+(28,16,1,116,2021,2022,0x3F819EA0E55F515AC564679E6F9C58AC,0xE83870AE76CCB720FD47B8E213B6900D,0x96665EA20714A1ECB896CA37AE4C3D0B,0x4B7CD00093C3E55303F3C1FE4CA007D763CB2C869B9D6F6DA946BB17498B6715,0x3199BF8750392CB37D971A73C2A80B1F),
+(29,16,2,212,2023,2024,0x95F579B39EF96F2A492117281BB1DD54,0x2696CF0605667FD1BF594A2AD8D9B0E3,0x81BC6DF4400517E74D87FBC5EF88C5BE,0x85011D4DB9B0450E970740FD25D665ECABA55E5BE467312FED4A68C4D1411D65,0xD8C46AEDEC851F0AE2561FAE0D685AF0),
+(30,17,1,117,2020,2021,0x5DC9B49ABA11121368FB4245A6D59025,0x244E7A1CFE335A90E5DD71FC7BB8BBE2,0x180C2711BFDE5B9F00D778CF496D331E,0x1BF8C7A2A2C93B5962A79913540AB440F8396D24629DF2D368955987A33053D7,0x60DB51D000E5E91817F870922BCC5D41),
+(31,18,1,118,2021,2022,0x0CDC2E02788C62CEA50DFB2F93712EC7,0x8FED66F97E422D97B3E62720D0F16E81,0xC50E8734F227A4051A61D12351DA0FAF,0x77D542C4D97E531EC8DC089133BD15CB84D4728826E3ACA7EE75D26552B1120C,0x592E596D73BA350D5B677C66D9366E53),
+(32,19,1,119,2020,2021,0x198C7433367ECE28A18E50AB5BDAEA75,0x7A67C61EE6C6123DA2D143DAA2727F8B,0x5EB9873B7047E0C38A55E3756E74E584,0xE20067BE7BF81AD0901125ACD2E82496F65DC05F3535CCB9B38D03BDBFD95EFF,0xF5268D078D7277F21B9F026CBD3A5670),
+(33,19,2,213,2022,2023,0xF3123645B7DB0B861F32ABF9E74DD1B0,0x94AA2892CEB0B0C0394536D0E8153CFB,0x68D2382E1211DD2A8AFF56E6E8068847,0x7504BDA540421FAEBB68349D5BE3E765A13512B1B46FF03DBB1924717119FE2F,0xCB1F2DD27FA2CA504C71F0EA4D694A5A),
+(35,20,1,120,2021,2022,0x3774C810551ACAB45FADA56AF97D7C2A,0x0A68B7CAAED5F0C6890E201476BC2AA0,0x22CE1047AC26113DB97E13AA5F7742A1,0x75251D9F05DE7762C59170F6B7A8141CF1181FDC4561660BF2E6191D08A9AD57,0x5562C20A9F7D48332A44A5EBAD3F1593);
+SET IDENTITY_INSERT [records] OFF;
 
-DROP TABLE IF EXISTS `chore`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `chore` (
-  `chore_id` int(11) NOT NULL AUTO_INCREMENT,
-  `house_id` int(11) NOT NULL,
-  `title` varchar(100) NOT NULL,
-  `area` varchar(50) DEFAULT NULL,
-  `frequency` enum('DAILY','WEEKLY','BIWEEKLY','MONTHLY') NOT NULL,
-  PRIMARY KEY (`chore_id`),
-  KEY `house_id` (`house_id`),
-  CONSTRAINT `chore_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `house` (`house_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+COMMIT TRANSACTION;
 
---
--- Dumping data for table `chore`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `chore` WRITE;
-/*!40000 ALTER TABLE `chore` DISABLE KEYS */;
-/*!40000 ALTER TABLE `chore` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `chore_assignment`
---
-
-DROP TABLE IF EXISTS `chore_assignment`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `chore_assignment` (
-  `assignment_id` int(11) NOT NULL AUTO_INCREMENT,
-  `chore_id` int(11) NOT NULL,
-  `tenant_id` int(11) NOT NULL,
-  `due_date` date NOT NULL,
-  `is_done` tinyint(1) NOT NULL DEFAULT 0,
-  `completed_at` datetime DEFAULT NULL,
-  PRIMARY KEY (`assignment_id`),
-  KEY `chore_id` (`chore_id`),
-  KEY `tenant_id` (`tenant_id`),
-  CONSTRAINT `chore_assignment_ibfk_1` FOREIGN KEY (`chore_id`) REFERENCES `chore` (`chore_id`) ON DELETE CASCADE,
-  CONSTRAINT `chore_assignment_ibfk_2` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `chore_assignment`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `chore_assignment` WRITE;
-/*!40000 ALTER TABLE `chore_assignment` DISABLE KEYS */;
-/*!40000 ALTER TABLE `chore_assignment` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `expense`
---
-
-DROP TABLE IF EXISTS `expense`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `expense` (
-  `expense_id` int(11) NOT NULL AUTO_INCREMENT,
-  `paid_by` int(11) NOT NULL,
-  `description` varchar(255) DEFAULT NULL,
-  `amount` decimal(10,2) NOT NULL,
-  `date` date NOT NULL,
-  PRIMARY KEY (`expense_id`),
-  KEY `paid_by` (`paid_by`),
-  CONSTRAINT `expense_ibfk_1` FOREIGN KEY (`paid_by`) REFERENCES `tenant` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `expense`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `expense` WRITE;
-/*!40000 ALTER TABLE `expense` DISABLE KEYS */;
-/*!40000 ALTER TABLE `expense` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `expense_share`
---
-
-DROP TABLE IF EXISTS `expense_share`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `expense_share` (
-  `expense_id` int(11) NOT NULL,
-  `tenant_id` int(11) NOT NULL,
-  `amount_owed` decimal(10,2) NOT NULL,
-  `is_settled` tinyint(1) NOT NULL DEFAULT 0,
-  PRIMARY KEY (`expense_id`,`tenant_id`),
-  KEY `tenant_id` (`tenant_id`),
-  CONSTRAINT `expense_share_ibfk_1` FOREIGN KEY (`expense_id`) REFERENCES `expense` (`expense_id`) ON DELETE CASCADE,
-  CONSTRAINT `expense_share_ibfk_2` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `expense_share`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `expense_share` WRITE;
-/*!40000 ALTER TABLE `expense_share` DISABLE KEYS */;
-/*!40000 ALTER TABLE `expense_share` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `grocery_item`
---
-
-DROP TABLE IF EXISTS `grocery_item`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `grocery_item` (
-  `item_id` int(11) NOT NULL AUTO_INCREMENT,
-  `house_id` int(11) NOT NULL,
-  `name` varchar(100) NOT NULL,
-  `quantity` int(11) NOT NULL DEFAULT 1,
-  `is_bought` tinyint(1) NOT NULL DEFAULT 0,
-  PRIMARY KEY (`item_id`),
-  KEY `house_id` (`house_id`),
-  CONSTRAINT `grocery_item_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `house` (`house_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `grocery_item`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `grocery_item` WRITE;
-/*!40000 ALTER TABLE `grocery_item` DISABLE KEYS */;
-/*!40000 ALTER TABLE `grocery_item` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `house`
---
-
-DROP TABLE IF EXISTS `house`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `house` (
-  `house_id` int(11) NOT NULL AUTO_INCREMENT,
-  `manager_id` int(11) NOT NULL,
-  `name` varchar(100) NOT NULL,
-  `adress` varchar(255) NOT NULL,
-  PRIMARY KEY (`house_id`),
-  KEY `manager_id` (`manager_id`),
-  CONSTRAINT `house_ibfk_1` FOREIGN KEY (`manager_id`) REFERENCES `property_manager` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `house`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `house` WRITE;
-/*!40000 ALTER TABLE `house` DISABLE KEYS */;
-/*!40000 ALTER TABLE `house` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `maintenance_ticket`
---
-
-DROP TABLE IF EXISTS `maintenance_ticket`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `maintenance_ticket` (
-  `ticket_id` int(11) NOT NULL AUTO_INCREMENT,
-  `house_id` int(11) NOT NULL,
-  `reported_by` int(11) NOT NULL,
-  `technician_id` int(11) DEFAULT NULL,
-  `title` varchar(100) NOT NULL,
-  `description` text DEFAULT NULL,
-  `location` varchar(100) DEFAULT NULL,
-  `category` varchar(50) DEFAULT NULL,
-  `urgency` enum('LOW','MEDIUM','HIGH') NOT NULL DEFAULT 'MEDIUM',
-  `status` enum('OPEN','ASSIGNED','IN_PROGRESS','RESOLVED') NOT NULL DEFAULT 'OPEN',
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`ticket_id`),
-  KEY `house_id` (`house_id`),
-  KEY `reported_by` (`reported_by`),
-  KEY `technician_id` (`technician_id`),
-  CONSTRAINT `maintenance_ticket_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `house` (`house_id`),
-  CONSTRAINT `maintenance_ticket_ibfk_2` FOREIGN KEY (`reported_by`) REFERENCES `tenant` (`user_id`),
-  CONSTRAINT `maintenance_ticket_ibfk_3` FOREIGN KEY (`technician_id`) REFERENCES `technician` (`user_id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `maintenance_ticket`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `maintenance_ticket` WRITE;
-/*!40000 ALTER TABLE `maintenance_ticket` DISABLE KEYS */;
-/*!40000 ALTER TABLE `maintenance_ticket` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `notification`
---
-
-DROP TABLE IF EXISTS `notification`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `notification` (
-  `notification_id` int(11) NOT NULL AUTO_INCREMENT,
-  `user_id` int(11) NOT NULL,
-  `message` varchar(255) NOT NULL,
-  `is_read` tinyint(1) NOT NULL DEFAULT 0,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`notification_id`),
-  KEY `user_id` (`user_id`),
-  CONSTRAINT `notification_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `notification`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `notification` WRITE;
-/*!40000 ALTER TABLE `notification` DISABLE KEYS */;
-/*!40000 ALTER TABLE `notification` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `photo`
---
-
-DROP TABLE IF EXISTS `photo`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `photo` (
-  `photo_id` int(11) NOT NULL AUTO_INCREMENT,
-  `ticket_id` int(11) NOT NULL,
-  `url` varchar(255) NOT NULL,
-  PRIMARY KEY (`photo_id`),
-  KEY `ticket_id` (`ticket_id`),
-  CONSTRAINT `photo_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `maintenance_ticket` (`ticket_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `photo`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `photo` WRITE;
-/*!40000 ALTER TABLE `photo` DISABLE KEYS */;
-/*!40000 ALTER TABLE `photo` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `property_manager`
---
-
-DROP TABLE IF EXISTS `property_manager`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `property_manager` (
-  `user_id` int(11) NOT NULL,
-  PRIMARY KEY (`user_id`),
-  CONSTRAINT `property_manager_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `property_manager`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `property_manager` WRITE;
-/*!40000 ALTER TABLE `property_manager` DISABLE KEYS */;
-/*!40000 ALTER TABLE `property_manager` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `records`
---
-
-DROP TABLE IF EXISTS `records`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `records` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `house_id` int(11) NOT NULL,
-  `room_id` int(11) NOT NULL,
-  `student_id` int(11) NOT NULL,
-  `start_year` smallint(6) NOT NULL,
-  `end_year` smallint(6) NOT NULL,
-  `iv` binary(16) DEFAULT NULL,
-  `student_name` varbinary(256) DEFAULT NULL,
-  `student_surname` varbinary(256) DEFAULT NULL,
-  `email` varbinary(512) DEFAULT NULL,
-  `phone_number` varbinary(128) DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=36 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `records`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `records` WRITE;
-/*!40000 ALTER TABLE `records` DISABLE KEYS */;
-INSERT INTO `records` VALUES
-(1,1,1,101,2020,2021,'ÖÏ6e˜⁄ªf?ñıû¡ñ+','â<ñÇsµ¥`°{dÎªÌ','rÛ†ëG„†D[ﬂØ Ω','<≈HQajßNÂ˚r~+∑Fep∂_¬Ü\"ãEÓ¨«wâu','zCc±rKb\r“nH1X‚¬8'),
-(2,1,2,205,2022,2023,'¿fŸb0Z√AkuJﬂ›‡','˜\\üCﬁS\\K._£t3x','¿©Ó2ùÉ`fìp\0ΩÄ⁄ì','—øáM+£)%xÕ†ÕåÌ≈∑ä8¶f·k(G6• ˇî','\"≈˛¨y©\0œå¥ï|Sj'),
-(4,2,1,102,2021,2022,'πV∫bü≠‘ªŒ∏∞ŒÅQº','B[\'„?ëìUÓŸ⁄Ωôw£t','s◊∂P:!=Ô/6ﬁ´åâ','§\\„÷µ°≥Ô®)öœÅæ	ƒà$^Æ˘Ç3à%˝m','ñc.â˙{_”Ä\ZM$ﬁ'),
-(5,2,2,206,2023,2024,'“nVäÛ†ÙfÙØÌà;*>','[BQít∂,h\\<lJ±-','πÄhÒ˜óT\"Jı¥÷~è','¨∂Nπúôß—’ú7 Ê|=[ï\ZìÀIpñüC\"','‚^cBÊ73º˙˘E’'),
-(6,3,1,103,2020,2021,'ëê	¨ÇBZg˝Ø˙X','?Úmû˚ﬁ;	öcÎÎi','S‹©\\ï@v÷@‡cOìÌ','é.:ÌÄq1„úøÔI¸]tí¶üä•›CÙ8˘â§','Éûì4s«Dÿ2¨:Ë{OQ'),
-(7,3,2,207,2022,2023,'\"u\'∆P‹Iâ√⁄∆Ú‡õ;î','É˝[‘D‹œÌXS◊Rû@ô—','E‘Ó…Â—ƒ›e∏⁄4¯','·º(œ`ˆ^	„ö$1·w˘ß\Z√˝M‡LªÏ#åG–','$≈%¿G‰jÜU òé˝qÑ&'),
-(9,4,1,104,2021,2022,'¥I‚2+m%ïé§$;','úõ˘?|v√ﬂQ∫ÍÑúÛ','∑dÜ¨uø+ò\n-oMz','.∞}Nê,ØO‘qß‡ÈÇ‡lÒtF\rSN¿Õ√ı»NŸìä∑','Æ{VA»‚¯GüºåC–ÆÈ'),
-(10,5,1,105,2020,2021,'ÕÄ™AçgT}Oã®lØ¡','(øL®…cò$v≤‹6¶$‚A',':<@<¿4\nöFX$‚v&','=÷ê∑Dîlä6º)1¸Ôb’m,ˆ˙brô”n≈\"\nˆ','Û<G§«eJ)ıa¬Z«˜m'),
-(11,5,2,208,2023,2024,'ŒP7Ôòò–“MpY à{','î‚‘2r8D(t‚Ô˚)µ','Õ€œÉ-Ø-úz°^.Ûßú	','‚üë∂¸÷?MTß\\;zØ_¨Ø`ºß/¡∞)≈5fƒæ..q','ôrﬁ\"Á∏™tñ1ä¿Ö'),
-(13,6,1,106,2022,2023,'∑ä¨ *]\0∑·¨¿Ã1LA','Pê?1øx§Jâ0DŸØ¬','˛’ZíÓ‰>ó≤›øÃ\"(ï','‘πû{y!ÎU#\'ÁÛºmUvíŒ†ü‡ZTw8','à≥Vôêkÿà≠eS/'),
-(14,7,1,107,2020,2021,'•_π~Ì‡lÉUªf\'\"-','5åI&ùÙVØå[Ìÿˆ','§q:¬!UÏÇm‚Cj‘','∫¬lˆ∑JÌ0®WÂØú’`ıw*~:$ºùÂSä','Ωm∑„\0 ztF-∂£≤.'),
-(15,7,2,209,2022,2023,'m4•øJ¿.ênVØﬂÛN','`‚Ω†∫Åæ/‡p¬üeP','r¨≥ÈÅJˇ—>U;ò\Z','ﬂ∫û©akﬂ%‘upå3I¨≈h¸.˚‘NbÆ0Ë—Nƒ)','wæ[òÇ(¡§«ó_Ù 3ì'),
-(17,8,1,108,2021,2022,'=>⁄°V$jäËcû©_z','TwÚZç.Xß≥[Âoiö¯','Øöp Ù≈TK≥UÁ','r™bº¯F˘Q$â¿$€)‚ã™E≤©Fﬁ+Ôªáa=','õ¨»ËÄÚ‡ÿ”\"hœl'),
-(18,9,1,109,2020,2021,'jé3À<Ü˙ÁÊŒˇ¡⁄´','‚Ka—©ó‡SsWú¯','—áÜ¬0óûÎıú€kÎ','˛´°ÎßÅä\'ﬁÓê\'c¸¶›b∞π$. S.•aA\'˜','VΩ;ë£a∞E˘k%rùü'),
-(19,10,1,110,2021,2022,'òç¢ˆˆ®nZS¯ˆ¢&','È$±œo≈¿·#ï\rÿg:Œ','z*\ZÈWGÜ®w‹;¸v2','õ@m¬f”∏©å~˚†WsﬁB …`æπsº-)∏˘â','ŸªÓo®æ5æ&’õ≤—Å'),
-(20,11,1,111,2020,2021,'zˆò•8oÛÿ˚Gqœ','»=ŒjªÔJA%›¥V£á','ã è}◊HHQy ﬁz-ó','óÀ\\XGµ÷êÕ=ªW‡PÈ X∆Q∞˙˙Ú¨∞','ü1NïVNπhr_Æë$#'),
-(21,11,2,210,2023,2024,'Ê‘Á¬\"ª™è÷~Û%¶…=','Ø∆+Ÿ	ÈÍÄ!eº∞','2w@Ÿ”ØiG∂ØCÏ','¢é(Ô∑K“Ë{ùSÆ∫ŸZım‡Ø«F1_ÚÜÿvﬁòp','˛≠ìV«!…Æ≥8˝;*'),
-(22,12,1,112,2021,2022,'_òÀ”ñ”ÈÖˇóëˇ\ZZ©',')¢%∞\'Üùµ∂Ö˝O∏J•','.ØPîHXQ∫çπu\Z_','qP∞!bK≤±	Ò”hΩ\Z\'ätŒ*¢Ω¯ˆ›;Ü∞ﬁ','ÿµ„/ç=ùµèÊjßfñ'),
-(23,13,1,113,2020,2021,'•v_‹◊DF^Sàh$°˜e','rÂ∫<KÜT;JE˛\\ç','≈âÖÈﬂ+ø=@·8©Ÿ\"úE','∫hÜ∫:†K]ıgíø ˆ¢(‹Ê≤]Ù§∂YÉ(ÿî','”Å#MMƒpE&U’°ì\'0'),
-(24,13,2,211,2022,2023,'ÂR5∞∞1@V4êyÒ|\\','P·n£^ ÿìˇê¶.ûI<','¬\'ãBD*sbŒ¶˝U™<','>Æ{~íÓv≠a|-ÿ¯[w\neÖ6{Å`•¢ô?◊|><','u√.•¯6ôùòMã¯ÚÕ'),
-(26,14,1,114,2021,2022,'òÇÙÃ°ñöaÄ8Ÿ‹','ì)€Äè<˚¶îªÙÉ Ò','vÙÏK%ˇåoDW≤¸‘öﬂ','S˘+„U*SD”s°Ö®W°rW±.†≥Ñµ‰•⁄9','K%∏™≥)Ê≈ò1»|ÏìZ'),
-(27,15,1,115,2020,2021,'è°¯bó¯HT¨8±˘Ø∂','œ°ö¸∂Ò¸Û˛Ωı≤\nı','98ÖéD`‡°çµà^1\räÅ','B∑Ùí(\ríqFç]ì‚6Âò\\OÇ°xô<Ωû›X¶€Òú','(Æi—[JàI‚K\r¡@”'),
-(28,16,1,116,2021,2022,'?Åû†Â_QZ≈dgûoúX¨','Ë8pÆvÃ∑ ˝G∏‚∂ê\r','ñf^¢°Ï∏ñ 7ÆL=','K|–\0ì√ÂSÛ¡˛L†◊cÀ,Üõùom©FªIãg','1ôøáP9,≥}ó\Zs¬®'),
-(29,16,2,212,2023,2024,'ïıy≥û˘o*I!(±›T','&ñœf—øYJ*ÿŸ∞„','ÅºmÙ@ÁMá˚≈Ôà≈æ','ÖMπ∞Eó@˝%÷eÏ´•^[‰g1/ÌJhƒ—Ae','ÿƒjÌÏÖ\n‚VÆ\rhZ'),
-(30,17,1,117,2020,2021,']…¥ö∫h˚BE¶’ê%','$Nz˛3ZêÂ›q¸{∏ª‚','\'øﬁ[ü\0◊xœIm3','¯«¢¢…;YbßôT\n¥@¯9m$bùÚ”hïYá£0S◊','`€Q–\0ÂÈ¯pí+Ã]A'),
-(31,18,1,118,2021,2022,'‹.xåbŒ•\r˚/ìq.«','èÌf˘~B-ó≥Ê\' –ÒnÅ','≈á4Ú\'§\Za—#Q⁄Ø','w’BƒŸ~S»‹ë3ΩÀÑ‘rà&„¨ßÓu“eR±','Y.Yms∫5\r[g|fŸ6nS'),
-(32,19,1,119,2020,2021,'åt36~Œ(°éP´[⁄Íu','zg∆Ê∆=¢—C⁄¢rã','^πá;pG‡√äU„untÂÑ','‚\0gæ{¯\Z–ê%¨“Ë$ñˆ]¿_55Ãπ≥çΩøŸ^ˇ','ı&ççrwÚülΩ:Vp'),
-(33,19,2,213,2022,2023,'Û6E∑€Ü2´˘ÁM—∞','î™(íŒ∞∞¿9E6–Ë<˚','h“8.›*äˇVÊËàG','uΩ•@BÆªh4ù[„Áe°5±¥o=ª$qq˛/','À-“¢ PLqÍMiJZ'),
-(35,20,1,120,2021,2022,'7t»U\Z ¥_≠•j˘}|*','\nh∑ Æ’∆â vº*†','\"ŒG¨&=π~™_wB°','u%üﬁwb≈ëpˆ∑®Ò‹EafÚÊ©≠W','Ub¬\nü}H3*D•Î≠?ì');
-/*!40000 ALTER TABLE `records` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `technician`
---
-
-DROP TABLE IF EXISTS `technician`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `technician` (
-  `user_id` int(11) NOT NULL,
-  `specialty` varchar(100) DEFAULT NULL,
-  PRIMARY KEY (`user_id`),
-  CONSTRAINT `technician_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `technician`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `technician` WRITE;
-/*!40000 ALTER TABLE `technician` DISABLE KEYS */;
-/*!40000 ALTER TABLE `technician` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `tenant`
---
-
-DROP TABLE IF EXISTS `tenant`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `tenant` (
-  `user_id` int(11) NOT NULL,
-  `house_id` int(11) NOT NULL,
-  `room_number` varchar(10) DEFAULT NULL,
-  PRIMARY KEY (`user_id`),
-  KEY `house_id` (`house_id`),
-  CONSTRAINT `tenant_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE,
-  CONSTRAINT `tenant_ibfk_2` FOREIGN KEY (`house_id`) REFERENCES `house` (`house_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `tenant`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `tenant` WRITE;
-/*!40000 ALTER TABLE `tenant` DISABLE KEYS */;
-/*!40000 ALTER TABLE `tenant` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `ticket_note`
---
-
-DROP TABLE IF EXISTS `ticket_note`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `ticket_note` (
-  `note_id` int(11) NOT NULL AUTO_INCREMENT,
-  `ticket_id` int(11) NOT NULL,
-  `text` text NOT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`note_id`),
-  KEY `ticket_id` (`ticket_id`),
-  CONSTRAINT `ticket_note_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `maintenance_ticket` (`ticket_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `ticket_note`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `ticket_note` WRITE;
-/*!40000 ALTER TABLE `ticket_note` DISABLE KEYS */;
-/*!40000 ALTER TABLE `ticket_note` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-
---
--- Table structure for table `user`
---
-
-DROP TABLE IF EXISTS `user`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `user` (
-  `user_id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(100) NOT NULL,
-  `email` varchar(255) NOT NULL,
-  `passwords` varchar(255) NOT NULL,
-  `role` enum('tenant','technician','property_manager') NOT NULL,
-  PRIMARY KEY (`user_id`),
-  UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `user`
---
-
-SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
-LOCK TABLES `user` WRITE;
-/*!40000 ALTER TABLE `user` DISABLE KEYS */;
-/*!40000 ALTER TABLE `user` ENABLE KEYS */;
-UNLOCK TABLES;
-COMMIT;
-SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
-/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
-
-/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-/*M!100616 SET NOTE_VERBOSITY=@OLD_NOTE_VERBOSITY */;
-
--- Dump completed on 2026-11-15 20:15:45
+-- Quick check: should show users 1, house 20, bills 1040, records 29
+SELECT 'users' AS [table], COUNT(*) AS [rows] FROM [users] UNION ALL SELECT 'house', COUNT(*) FROM [house] UNION ALL SELECT 'bills', COUNT(*) FROM [bills] UNION ALL SELECT 'records', COUNT(*) FROM [records];
