@@ -1,4 +1,6 @@
-from sqlalchemy import ForeignKey, String
+from datetime import date, datetime
+
+from sqlalchemy import ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -41,3 +43,66 @@ class Tenant(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
     house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
     room_number: Mapped[str | None] = mapped_column(String(10))
+
+class MaintenanceTicket(Base):
+    __tablename__ = "maintenance_ticket"
+
+    ticket_id: Mapped[int] = mapped_column(primary_key=True)
+    house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
+    reported_by: Mapped[int] = mapped_column(ForeignKey("tenant.user_id"))
+    technician_id: Mapped[int | None] = mapped_column(ForeignKey("technician.user_id"))
+    title: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(String(100))
+    category: Mapped[str | None] = mapped_column(String(50))
+    urgency: Mapped[str] = mapped_column(String(10), server_default="MEDIUM")
+    status: Mapped[str] = mapped_column(String(12), server_default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.sysutcdatetime())
+
+
+class TicketNote(Base):
+    __tablename__ = "ticket_note"
+
+    note_id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("maintenance_ticket.ticket_id"))
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.sysutcdatetime())
+
+
+class Photo(Base):
+    __tablename__ = "photo"
+
+    photo_id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("maintenance_ticket.ticket_id"))
+    url: Mapped[str] = mapped_column(String(255))
+
+
+class Chore(Base):
+    __tablename__ = "chore"
+
+    chore_id: Mapped[int] = mapped_column(primary_key=True)
+    house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
+    title: Mapped[str] = mapped_column(String(100))
+    area: Mapped[str | None] = mapped_column(String(50))
+    frequency: Mapped[str] = mapped_column(String(10))
+
+
+class ChoreAssignment(Base):
+    __tablename__ = "chore_assignment"
+
+    assignment_id: Mapped[int] = mapped_column(primary_key=True)
+    chore_id: Mapped[int] = mapped_column(ForeignKey("chore.chore_id"))
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant.user_id"))
+    due_date: Mapped[date]
+    is_done: Mapped[bool] = mapped_column(server_default="0")
+    completed_at: Mapped[datetime | None]
+
+
+class GroceryItem(Base):
+    __tablename__ = "grocery_item"
+
+    item_id: Mapped[int] = mapped_column(primary_key=True)
+    house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
+    name: Mapped[str] = mapped_column(String(100))
+    quantity: Mapped[int] = mapped_column(server_default="1")
+    is_bought: Mapped[bool] = mapped_column(server_default="0")
