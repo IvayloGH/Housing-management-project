@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 class LoginRequest(BaseModel):
@@ -66,3 +66,16 @@ class TicketAssign(BaseModel):
 
 class TicketStatusUpdate(BaseModel):
     status: Literal["IN_PROGRESS", "RESOLVED"]
+
+
+class ScheduleEntry(BaseModel):
+    assignment_id: int
+    due_date: date
+    chore_title: str
+    area: str | None
+    tenant_id: int
+    tenant_name: str
+    is_done: bool
+    completed_at: datetime | None
+    status: Literal["DONE", "MISSED", "PLANNED"]
+    is_mine: bool
