@@ -109,3 +109,28 @@ class TechnicianOut(BaseModel):
     name: str
     email: EmailStr
     specialty: str | None
+
+# ---------- Profiles ----------
+
+class ProfileOut(BaseModel):
+    user_id: int
+    name: str
+    email: EmailStr
+    role: str
+    # Only filled for tenants:
+    house_id: int | None = None
+    house_name: str | None = None
+    room_number: str | None = None
+    # Only filled for technicians:
+    specialty: str | None = None
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    email: EmailStr | None = None
+    specialty: str | None = Field(default=None, max_length=100)
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)

@@ -1,0 +1,67 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import House, Technician, Tenant, User
+from schemas import PasswordChange, ProfileOut, ProfileUpdate
+from security import get_current_user, hash_password, verify_password  # Eszter's
+
+router = APIRouter(prefix="/users", tags=["Users"])
+
+
+def build_profile(db: Session, user: User) -> ProfileOut:
+    """Basic user info + the extra fields that belong to their role."""
+    profile = ProfileOut(user_id=user.user_id, name=user.name, email=user.email, role=user.role)
+
+    if user.role == "tenant":
+        tenant = db.get(Tenant, user.user_id)
+        if tenant is not None:
+            house = db.get(House, tenant.house_id)
+            profile.house_id = house.house_id
+            profile.house_name = house.name
+            profile.room_number = tenant.room_number
+
+    elif user.role == "technician":
+        technician = db.get(Technician, user.user_id)
+        if technician is not None:
+            profile.specialty = technician.specialty
+
+    return profile
+
+
+@router.get("/me", response_model=ProfileOut)
+def my_profile(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return build_profile(db, user)
+
+
+@router.put("/me", response_model=ProfileOut)
+def update_my_profile(data: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    changes = data.model_dump(exclude_unset=True)
+
+    if changes.get("name") is not None:
+        user.name = changes["name"]
+
+    if changes.get("email") is not None and changes["email"] != user.email:
+        taken = db.scalar(select(User).where(User.email == changes["email"], User.user_id != user.user_id))
+        if taken is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "This email is already in use")
+        user.email = changes["email"]
+
+    if "specialty" in changes:
+        if user.role != "technician":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only technicians have a specialty")
+        db.get(Technician, user.user_id).specialty = changes["specialty"]
+
+    db.commit()
+    db.refresh(user)
+    return build_profile(db, user)
+
+
+@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_my_password(data: PasswordChange, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+
+    user.password_hash = hash_password(data.new_password)
+    db.commit()
