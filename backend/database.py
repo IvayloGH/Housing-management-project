@@ -22,7 +22,7 @@ DATABASE_URL = URL.create(
 )
 
 # 3. The engine (the connection itself) and a session factory
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"timeout": 60})
 SessionLocal = sessionmaker(bind=engine, autoflush=False)
 
 # 4. Base class that models.py will use for the tables

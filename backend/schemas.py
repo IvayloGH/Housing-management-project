@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from datetime import date, datetime
 from typing import Literal
+from decimal import Decimal
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -134,3 +135,35 @@ class ProfileUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+# ---------- Expenses ----------
+
+class ExpenseCreate(BaseModel):
+    description: str | None = Field(default=None, max_length=255)
+    amount: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+    spent_on: date | None = None             # default: today
+    split_between: list[int] | None = None   # tenant ids; default: everyone in the house
+
+
+class ShareOut(BaseModel):
+    tenant_id: int
+    tenant_name: str
+    amount_owed: Decimal
+    is_settled: bool
+
+
+class ExpenseOut(BaseModel):
+    expense_id: int
+    description: str | None
+    amount: Decimal
+    spent_on: date
+    paid_by: int
+    paid_by_name: str
+    shares: list[ShareOut]
+
+
+class BalanceOut(BaseModel):
+    tenant_id: int
+    tenant_name: str
+    is_me: bool
+    balance: Decimal  # positive = others owe them, negative = they owe others

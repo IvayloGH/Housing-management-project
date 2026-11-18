@@ -1,6 +1,6 @@
 from datetime import date, datetime
-
-from sqlalchemy import ForeignKey, String, Text, func
+from decimal import Decimal
+from sqlalchemy import ForeignKey, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -106,3 +106,23 @@ class GroceryItem(Base):
     name: Mapped[str] = mapped_column(String(100))
     quantity: Mapped[int] = mapped_column(server_default="1")
     is_bought: Mapped[bool] = mapped_column(server_default="0")
+
+
+
+class Expense(Base):
+    __tablename__ = "expense"
+
+    expense_id: Mapped[int] = mapped_column(primary_key=True)
+    paid_by: Mapped[int] = mapped_column(ForeignKey("tenant.user_id"))
+    description: Mapped[str | None] = mapped_column(String(255))
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    spent_on: Mapped[date] = mapped_column("date")
+
+
+class ExpenseShare(Base):
+    __tablename__ = "expense_share"
+
+    expense_id: Mapped[int] = mapped_column(ForeignKey("expense.expense_id"), primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant.user_id"), primary_key=True)
+    amount_owed: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    is_settled: Mapped[bool] = mapped_column(server_default="0")
