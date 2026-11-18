@@ -79,3 +79,33 @@ class ScheduleEntry(BaseModel):
     completed_at: datetime | None
     status: Literal["DONE", "MISSED", "PLANNED"]
     is_mine: bool
+
+    # ---------- Houses (manager) ----------
+
+class HouseOut(BaseModel):
+    house_id: int
+    name: str
+    address: str
+    tenant_count: int
+    open_ticket_count: int
+
+
+class ManagerOverview(BaseModel):
+    houses: int
+    tenants: int
+    tickets_waiting: int      # OPEN: waiting for the manager to assign
+    tickets_in_progress: int  # ASSIGNED or IN_PROGRESS
+
+
+class TenantOut(BaseModel):
+    user_id: int
+    name: str
+    email: EmailStr
+    room_number: str | None
+
+
+class TechnicianOut(BaseModel):
+    user_id: int
+    name: str
+    email: EmailStr
+    specialty: str | None
