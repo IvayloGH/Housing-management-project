@@ -1,4 +1,5 @@
-import { Routes, Route, Link } from 'react-router'
+import { Routes, Route } from 'react-router'
+import AppLayout from './components/AppLayout.jsx'
 import TenantPage from './pages/TenantPage.jsx'
 import ManagerPage from './pages/ManagerPage.jsx'
 import TechnicianPage from './pages/TechnicianPage.jsx'
@@ -6,19 +7,20 @@ import LoginPage from './pages/LoginPage.jsx'
 
 function App() {
   return (
-    <div>
-      <nav>
-        <Link to="/">Login</Link> | <Link to="/tenant">Tenant</Link> |{' '}
-        <Link to="/manager">Manager</Link> | <Link to="/technician">Technician</Link>
-      </nav>
+    <Routes>
+      {/* Login page: no app shell before someone is logged in */}
+      <Route path="/" element={<LoginPage />} />
 
-      <Routes>
-        <Route path="/" element={<LoginPage />} />
+      {/* All pages inside AppLayout get the Roomify header and menu */}
+      <Route element={<AppLayout />}>
         <Route path="/tenant" element={<TenantPage />} />
         <Route path="/manager" element={<ManagerPage />} />
         <Route path="/technician" element={<TechnicianPage />} />
-      </Routes>
-    </div>
+
+        {/* Other menu pages: keep the header, page content is added later */}
+        <Route path="*" element={null} />
+      </Route>
+    </Routes>
   )
 }
 
