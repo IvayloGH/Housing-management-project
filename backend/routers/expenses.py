@@ -9,6 +9,7 @@ from database import get_db
 from deps import get_my_house_id
 from models import Expense, ExpenseShare, Tenant, User
 from schemas import BalanceOut, ExpenseCreate, ExpenseOut, ShareOut
+from services.expense_service import split_evenly
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
@@ -22,19 +23,6 @@ def housemates(db: Session, house_id: int) -> dict[int, str]:
         .where(Tenant.house_id == house_id)
     ).all()
     return dict(rows)
-
-
-def split_evenly(amount: Decimal, people: list[int]) -> dict[int, Decimal]:
-    """Split an amount in cents so the shares always add up exactly.
-    €10.00 between 3 people -> 3.34 + 3.33 + 3.33
-    """
-    cents = int(amount * 100)
-    base, extra = divmod(cents, len(people))
-    return {
-        person: Decimal(base + (1 if i < extra else 0)) / 100
-        for i, person in enumerate(people)
-    }
-
 
 def expense_out(db: Session, expense: Expense) -> ExpenseOut:
     """One expense + its shares, with names, ready to send to the frontend."""

@@ -81,6 +81,13 @@ class ScheduleEntry(BaseModel):
     status: Literal["DONE", "MISSED", "PLANNED"]
     is_mine: bool
 
+class ChorePlanResult(BaseModel):
+    house_id: int
+    year: int
+    month: int
+    created: int
+    already_planned: int
+
     # ---------- Houses (manager) ----------
 
 class HouseOut(BaseModel):

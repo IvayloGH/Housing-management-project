@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from deps import get_my_house_id
-from models import Chore, ChoreAssignment, User
-from schemas import ScheduleEntry
+from models import Chore, ChoreAssignment, House, Tenant, User
+from schemas import ChorePlanResult, ScheduleEntry
+from services.chore_service import plan_month
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/chores", tags=["Chores"])
@@ -100,3 +101,53 @@ def mark_done(assignment_id: int, db: Session = Depends(get_db), user: User = De
     db.commit()
     db.refresh(assignment)
     return to_entry(assignment, db.get(Chore, assignment.chore_id), user, user)
+
+@router.post("/houses/{house_id}/plan", response_model=ChorePlanResult, status_code=status.HTTP_201_CREATED)
+def plan_house_month(
+    house_id: int,
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("property_manager")),
+):
+    """Manager: plan who does which chore in one of my houses for one month.
+    Safe to call twice: chores that are already planned are skipped."""
+    house = db.get(House, house_id)
+    if house is None or house.manager_id != user.user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "House not found")
+
+    chores = db.execute(select(Chore.chore_id, Chore.frequency).where(Chore.house_id == house_id)).all()
+    tenant_ids = db.scalars(select(Tenant.user_id).where(Tenant.house_id == house_id)).all()
+    if not chores:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This house has no chores yet")
+    if not tenant_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This house has no tenants yet")
+
+    # the rotation rule lives in the service
+    plan = plan_month(year, month, [tuple(c) for c in chores], list(tenant_ids))
+
+    # what is already planned this month, so we never add a chore twice
+    first_day = date(year, month, 1)
+    last_day = date(year, month, monthrange(year, month)[1])
+    existing = set(db.execute(
+        select(ChoreAssignment.chore_id, ChoreAssignment.due_date)
+        .where(ChoreAssignment.chore_id.in_([c.chore_id for c in chores]))
+        .where(ChoreAssignment.due_date.between(first_day, last_day))
+    ).all())
+
+    today = date.today()
+    new_rows = [
+        ChoreAssignment(chore_id=p.chore_id, tenant_id=p.tenant_id, due_date=p.due_date)
+        for p in plan
+        if (p.chore_id, p.due_date) not in existing and p.due_date >= today
+    ]
+    db.add_all(new_rows)
+    db.commit()
+
+    return ChorePlanResult(
+        house_id=house_id,
+        year=year,
+        month=month,
+        created=len(new_rows),
+        already_planned=sum(1 for p in plan if (p.chore_id, p.due_date) in existing),
+    )
