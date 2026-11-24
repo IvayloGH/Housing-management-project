@@ -3,7 +3,7 @@
 Only validate NEW passwords here. Existing passwords are verified against Argon2 hashes.
 """
 
-MIN_PASSWORD_LENGTH = 15
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 1024
 
 

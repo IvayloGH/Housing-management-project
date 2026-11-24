@@ -22,6 +22,8 @@ function errorText(data, status) {
   if (typeof detail === 'string') return detail
   // FastAPI checks the input itself and then sends a list of problems: show the first one
   if (Array.isArray(detail) && detail.length > 0 && detail[0].msg) return detail[0].msg
+  // The password rules send a plain list of sentences
+  if (Array.isArray(detail) && typeof detail[0] === 'string') return detail.join('. ')
   return 'Something went wrong (error ' + status + ')'
 }
 
