@@ -6,7 +6,8 @@ from database import get_db
 from models import House, Technician, Tenant, User
 from deps import get_my_house_id
 from schemas import HousemateOut, PasswordChange, ProfileOut, ProfileUpdate
-from security import get_current_user, hash_password, require_role, verify_password  # Eszter's
+from security import get_current_user, hash_password, require_role, verify_password
+from password_policy import validate_password
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -63,6 +64,12 @@ def update_my_profile(data: ProfileUpdate, db: Session = Depends(get_db), user: 
 def change_my_password(data: PasswordChange, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not verify_password(data.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+
+    if data.current_password == data.new_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose a different new password")
+    problems = validate_password(data.new_password)
+    if problems:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, problems)
 
     user.password_hash = hash_password(data.new_password)
     db.commit()
