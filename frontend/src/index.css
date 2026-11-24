@@ -2342,3 +2342,8 @@ textarea {
   inset: 0;
   z-index: 15;
 }
+
+/* Price box next to "I bought it" on Shared groceries */
+.price-input {
+  width: 9rem;
+}

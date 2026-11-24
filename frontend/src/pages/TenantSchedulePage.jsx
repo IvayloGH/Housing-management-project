@@ -2,8 +2,9 @@ import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
-import { tenantInfo, houseSchedule, housemates } from '../data/mockData.js'
 import { dateText, todayText } from '../utils/dateText.js'
+import { useApi } from '../api/useApi.js'
+import { addChore, getHousemates, getProfile, getSchedule } from '../api/roomify.js'
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const monthNames = [
@@ -11,33 +12,41 @@ const monthNames = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 const commonChores = ['Kitchen', 'Fridge', 'Bins', 'Bathroom 1', 'Bathroom 2', 'Hallway', 'Living room']
-const repeatOptions = ['Once', 'Every week', 'Every 2 weeks']
+// The repeat choices, and how the backend calls them
+const repeatOptions = { Once: 'ONCE', 'Every week': 'WEEKLY', 'Every 2 weeks': 'BIWEEKLY' }
 const statusLabel = { done: 'Done', notDone: 'Not done', planned: 'Planned' }
+const statusFromBackend = { DONE: 'done', MISSED: 'notDone', PLANNED: 'planned' }
 
-// The fake chores are stored per day of November 2026 (1, 3, 6, ...).
-// Here we give every day its full date as name, like "2026-11-15".
-function makeStartSchedule() {
+// The backend's list of chores, stored per day: { "2026-11-15": [ {task, who, status}, ... ] }
+function perDay(entries) {
   const schedule = {}
-  for (const day in houseSchedule) {
-    schedule[dateText(2026, 11, Number(day))] = houseSchedule[day]
+  for (const e of entries) {
+    const chore = { task: e.chore_title, who: e.is_mine ? 'You' : e.tenant_name, status: statusFromBackend[e.status] }
+    schedule[e.due_date] = [...(schedule[e.due_date] || []), chore]
   }
   return schedule
 }
 
 function TenantSchedulePage() {
   // The month we look at. month: 1 = January ... 12 = December
-  const [year, setYear] = useState(2026)
-  const [month, setMonth] = useState(11)
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
   // The day that is selected in the calendar (its chores are listed under it)
-  const [selectedDay, setSelectedDay] = useState(new Date().getDate())
-  // All chores, per day: { "2026-11-15": [ {task, who, status}, ... ] }
-  const [schedule, setSchedule] = useState(makeStartSchedule())
+  const [selectedDay, setSelectedDay] = useState(now.getDate())
   const [message, setMessage] = useState('')
+
+  // The chores of this month: loaded again when the month changes
+  const monthData = useApi(() => getSchedule(year, month), [year, month])
+  const houseData = useApi(() => Promise.all([getProfile(), getHousemates()]))
+  const schedule = monthData.data ? perDay(monthData.data) : {}
+  const profile = houseData.data ? houseData.data[0] : null
+  const housemates = houseData.data ? houseData.data[1] : []
 
   // The "Add a chore" form
   const [formOpen, setFormOpen] = useState(false)
   const [task, setTask] = useState('')
-  const [who, setWho] = useState('You')
+  const [who, setWho] = useState('')
   const [choreDate, setChoreDate] = useState('')
   const [repeat, setRepeat] = useState('Once')
   const [formError, setFormError] = useState('')
@@ -82,76 +91,62 @@ function TenantSchedulePage() {
   }
 
   function openForm() {
+    const me = housemates.find((h) => h.is_me)
     setTask('')
-    setWho('You')
-    setChoreDate(selected)
+    setWho(me ? me.user_id : '')
+    setChoreDate(selected < today ? today : selected)
     setRepeat('Once')
     setFormError('')
     setMessage('')
     setFormOpen(true)
   }
 
-  function addChore(event) {
+  async function handleAddChore(event) {
     event.preventDefault()
     if (task.trim() === '') {
       setFormError('Pick or type a chore.')
       return
     }
 
-    // The date input gives text like "2026-11-15". Split it into numbers.
-    const parts = choreDate.split('-')
-    const choreYear = Number(parts[0])
-    const choreMonth = Number(parts[1])
-    const firstDay = Number(parts[2])
-    const lastDay = new Date(choreYear, choreMonth, 0).getDate()
+    try {
+      const added = await addChore({
+        title: task.trim(),
+        tenant_id: Number(who),
+        first_date: choreDate,
+        repeat: repeatOptions[repeat],
+      })
 
-    // Which days get the chore: only the first day, or every 7 or 14 days until the end of the month
-    const days = [firstDay]
-    let step = 0
-    if (repeat === 'Every week') step = 7
-    if (repeat === 'Every 2 weeks') step = 14
-    if (step > 0) {
-      for (let day = firstDay + step; day <= lastDay; day = day + step) {
-        days.push(day)
-      }
-    }
+      // Show the month and day of the new chore
+      const [choreYear, choreMonth, firstDay] = choreDate.split('-').map(Number)
+      setYear(choreYear)
+      setMonth(choreMonth)
+      setSelectedDay(firstDay)
+      setFormOpen(false)
+      monthData.reload()
 
-    // Add the chore to each of those days
-    const newSchedule = { ...schedule }
-    for (const day of days) {
-      const name = dateText(choreYear, choreMonth, day)
-      const choresThatDay = newSchedule[name] || []
-      newSchedule[name] = [...choresThatDay, { task: task.trim(), who: who, status: 'planned' }]
-    }
-    setSchedule(newSchedule)
-
-    // Show the month and day of the new chore
-    setYear(choreYear)
-    setMonth(choreMonth)
-    setSelectedDay(firstDay)
-    setFormOpen(false)
-
-    if (days.length > 1) {
-      setMessage(`${task.trim()} · ${who} added (${days.length} times this month)`)
-    } else {
-      setMessage(`${task.trim()} · ${who} added`)
+      const name = housemates.find((h) => h.user_id === Number(who))
+      const whoText = name && name.is_me ? 'You' : name ? name.name : ''
+      setMessage(`${task.trim()} · ${whoText} added` + (added.length > 1 ? ` (${added.length} times this month)` : ''))
+    } catch (err) {
+      setFormError(err.message)
     }
   }
 
   return (
     <>
       <PageHeader
-        eyebrow={`Tenant · Cleaning schedule · ${tenantInfo.house}`}
+        eyebrow={`Tenant · Cleaning schedule${profile ? ' · ' + profile.house_name : ''}`}
         title="Cleaning schedule."
         titleMuted="Everyone's chores for the month."
       />
 
       <div className="page-body">
+        {(monthData.error || houseData.error) && <p className="error">{monthData.error || houseData.error}</p>}
         {message && <p className="saved message"><Icon name="check" /> {message}</p>}
 
         {/* ---------- Add a chore ---------- */}
         {formOpen && (
-          <form className="card add-chore" onSubmit={addChore}>
+          <form className="card add-chore" onSubmit={handleAddChore}>
             <div className="card-head">
               <h2>Add a chore</h2>
               <button type="button" className="link-button" onClick={() => setFormOpen(false)}>Cancel</button>
@@ -173,18 +168,27 @@ function TenantSchedulePage() {
               <div className="field">
                 <label htmlFor="who">Who does it?</label>
                 <select id="who" value={who} onChange={(e) => setWho(e.target.value)}>
-                  {housemates.map((h) => <option key={h}>{h}</option>)}
+                  {housemates.map((h) => (
+                    <option key={h.user_id} value={h.user_id}>{h.is_me ? 'You' : h.name}</option>
+                  ))}
                 </select>
               </div>
               <div className="field">
                 <label htmlFor="day">Which day?</label>
-                <input id="day" type="date" value={choreDate} onChange={(e) => setChoreDate(e.target.value)} required />
+                <input
+                  id="day"
+                  type="date"
+                  min={today}
+                  value={choreDate}
+                  onChange={(e) => setChoreDate(e.target.value)}
+                  required
+                />
               </div>
             </div>
 
             <div className="field">
               <label>How often?</label>
-              <ChipGroup options={repeatOptions} value={repeat} onChange={setRepeat} />
+              <ChipGroup options={Object.keys(repeatOptions)} value={repeat} onChange={setRepeat} />
             </div>
 
             {formError && <p className="error">{formError}</p>}

@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import House, Technician, Tenant, User
-from schemas import PasswordChange, ProfileOut, ProfileUpdate
-from security import get_current_user, hash_password, verify_password  # Eszter's
+from deps import get_my_house_id
+from schemas import HousemateOut, PasswordChange, ProfileOut, ProfileUpdate
+from security import get_current_user, hash_password, require_role, verify_password  # Eszter's
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -65,3 +66,18 @@ def change_my_password(data: PasswordChange, db: Session = Depends(get_db), user
 
     user.password_hash = hash_password(data.new_password)
     db.commit()
+
+
+@router.get("/housemates", response_model=list[HousemateOut])
+def my_housemates(db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
+    """Everyone in my house (for 'Who does it?' when adding a chore)."""
+    rows = db.execute(
+        select(User, Tenant)
+        .join(Tenant, Tenant.user_id == User.user_id)
+        .where(Tenant.house_id == get_my_house_id(db, user))
+        .order_by(User.name)
+    ).all()
+    return [
+        HousemateOut(user_id=u.user_id, name=u.name, room_number=t.room_number, is_me=(u.user_id == user.user_id))
+        for u, t in rows
+    ]

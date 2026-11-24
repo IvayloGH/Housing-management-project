@@ -1,23 +1,29 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { notifications, markNotificationRead } from '../data/mockData.js'
+import { useApi } from '../api/useApi.js'
+import { getNotifications, markNotificationRead } from '../api/roomify.js'
+import { dayText } from '../api/convert.js'
+
+// Where a notification takes you, per role
+const homePage = { tenant: '/tenant/report', manager: '/manager', technician: '/technician' }
 
 // The bell in the top bar. The red number shows how many notifications are unread.
 // Click the bell to open the list, click a notification to go to its page.
 function NotificationBell({ role }) {
-  // Only the notifications for this role (tenant, manager or technician)
-  const [items, setItems] = useState(notifications.filter((n) => n.role === role))
+  const { data, reload } = useApi(getNotifications)
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
 
-  const unreadCount = items.filter((n) => !n.read).length
+  const items = data || []
+  const unreadCount = items.filter((n) => !n.is_read).length
 
-  function openNotification(notification) {
-    // Mark it as read in the fake data and in this list
-    markNotificationRead(notification.id)
-    setItems(items.map((n) => (n.id === notification.id ? { ...n, read: true } : n)))
+  async function openNotification(notification) {
     setOpen(false)
-    navigate(notification.link)
+    if (!notification.is_read) {
+      await markNotificationRead(notification.notification_id).catch(() => null)
+      reload()
+    }
+    navigate(homePage[role] || '/')
   }
 
   return (
@@ -44,15 +50,15 @@ function NotificationBell({ role }) {
 
             <ul>
               {items.map((n) => (
-                <li key={n.id}>
+                <li key={n.notification_id}>
                   <button
-                    className={n.read ? 'notification' : 'notification unread'}
+                    className={n.is_read ? 'notification' : 'notification unread'}
                     onClick={() => openNotification(n)}
                   >
-                    {!n.read && <span className="dot dot-green" />}
+                    {!n.is_read && <span className="dot dot-green" />}
                     <span>
-                      <span className="notification-text">{n.text}</span>
-                      <span className="row-sub">{n.time}</span>
+                      <span className="notification-text">{n.message}</span>
+                      <span className="row-sub">{dayText(n.created_at)}</span>
                     </span>
                   </button>
                 </li>

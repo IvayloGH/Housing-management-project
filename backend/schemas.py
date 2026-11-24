@@ -7,6 +7,22 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+RegisterRole = Literal["tenant", "technician", "property_manager"]
+
+
+class RegisterRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    role: RegisterRole = "tenant"
+    # Tenants only: the address of the house they live in (= "join a house")
+    street: str | None = Field(default=None, max_length=100)
+    city: str | None = Field(default=None, max_length=100)
+    room_number: str | None = Field(default=None, max_length=10)
+    # Technicians only
+    specialty: str | None = Field(default=None, max_length=100)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -46,12 +62,13 @@ class TicketCreate(BaseModel):
 
 
 class TicketOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     ticket_id: int
     house_id: int
+    house_name: str
     reported_by: int
+    reported_by_name: str
     technician_id: int | None
+    technician_name: str | None
     title: str
     description: str | None
     location: str | None
@@ -59,6 +76,35 @@ class TicketOut(BaseModel):
     urgency: str
     status: str
     created_at: datetime
+    photo_urls: list[str] = []
+    last_note: str | None = None   # newest note, e.g. what the technician did
+
+
+class TicketUpdate(BaseModel):
+    """Manager changes how urgent a ticket is and what kind of problem it is."""
+    urgency: Urgency | None = None
+    category: str | None = Field(default=None, max_length=50)
+
+
+class NoteCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class NoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    note_id: int
+    ticket_id: int
+    text: str
+    created_at: datetime
+
+
+class PhotoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    photo_id: int
+    ticket_id: int
+    url: str
 
 
 class TicketAssign(BaseModel):
@@ -81,6 +127,14 @@ class ScheduleEntry(BaseModel):
     status: Literal["DONE", "MISSED", "PLANNED"]
     is_mine: bool
 
+class ChoreAdd(BaseModel):
+    """Tenant adds a chore for someone in the house, once or repeating until the end of that month."""
+    title: str = Field(min_length=1, max_length=100)
+    tenant_id: int
+    first_date: date
+    repeat: Literal["ONCE", "WEEKLY", "BIWEEKLY"] = "ONCE"
+
+
 class ChorePlanResult(BaseModel):
     house_id: int
     year: int
@@ -96,6 +150,12 @@ class HouseOut(BaseModel):
     address: str
     tenant_count: int
     open_ticket_count: int
+
+
+class HouseSave(BaseModel):
+    """Add or edit a house. Stored as name = street, address = "street, city"."""
+    street: str = Field(min_length=1, max_length=100)
+    city: str = Field(min_length=1, max_length=100)
 
 
 class ManagerOverview(BaseModel):
@@ -174,3 +234,23 @@ class BalanceOut(BaseModel):
     tenant_name: str
     is_me: bool
     balance: Decimal  # positive = others owe them, negative = they owe others
+
+
+# ---------- Housemates ----------
+
+class HousemateOut(BaseModel):
+    user_id: int
+    name: str
+    room_number: str | None
+    is_me: bool
+
+
+# ---------- Notifications ----------
+
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    notification_id: int
+    message: str
+    is_read: bool
+    created_at: datetime

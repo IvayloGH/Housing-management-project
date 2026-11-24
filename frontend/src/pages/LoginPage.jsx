@@ -9,10 +9,11 @@ function LoginPage() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
+    setError('')
     try {
-      const user = login(email, password)
+      const user = await login(email, password)
       navigate('/' + user.role)
     } catch (err) {
       setError(err.message)

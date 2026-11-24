@@ -3,10 +3,21 @@ import { Link } from 'react-router'
 import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import StatCard from '../components/StatCard.jsx'
-import { reports, houses } from '../data/mockData.js'
+import { useApi } from '../api/useApi.js'
+import { getHouses, getManagerTickets } from '../api/roomify.js'
+import { toReport } from '../api/convert.js'
+
+async function loadOverview() {
+  const [tickets, houses] = await Promise.all([getManagerTickets(), getHouses()])
+  return { reports: tickets.map((t) => toReport(t)), houses }
+}
 
 function ManagerPage() {
+  const { data, error } = useApi(loadOverview)
   const [house, setHouse] = useState('All houses')
+
+  const reports = data ? data.reports : []
+  const houses = data ? data.houses : []
 
   // Only open reports, filtered on the chosen house
   const openReports = reports.filter(
@@ -24,7 +35,7 @@ function ManagerPage() {
         titleMuted="Newest reports at the top."
         side={
           <ChipGroup
-            options={['All houses', ...houses.map((h) => h.street)]}
+            options={['All houses', ...houses.map((h) => h.name)]}
             value={house}
             onChange={setHouse}
           />
@@ -32,6 +43,8 @@ function ManagerPage() {
       />
 
       <div className="page-body">
+        {error && <p className="error">{error}</p>}
+
         <div className="grid-3">
           <StatCard color="red" label="Urgent" number={urgent} />
           <StatCard color="orange" label="Waiting to be assigned" number={waiting} />
@@ -40,6 +53,7 @@ function ManagerPage() {
 
         <section className="card">
           <h2>All reports</h2>
+          {data && openReports.length === 0 && <p className="row-sub">No open reports. Everything is fixed.</p>}
           <div className="table-wrap">
             <table className="table">
               <thead>

@@ -2,16 +2,11 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import PageHeader from '../components/PageHeader.jsx'
 import StatusDot from '../components/StatusDot.jsx'
-import { tenantInfo, myChores, supplies, reports } from '../data/mockData.js'
 import Icon from '../components/Icon.jsx'
 import tenantPhoto from '../assets/photos/tenant-home.jpg'
-
-// Colour and text for each supply status
-const supplyStatus = {
-  low: { color: 'orange', label: 'Running low' },
-  out: { color: 'red', label: 'Out' },
-  enough: { color: 'green', label: 'Enough' },
-}
+import { useApi } from '../api/useApi.js'
+import { getHouseTickets, getMyChores, getGroceries, getProfile, markBought, markChoreDone } from '../api/roomify.js'
+import { fromDateText, toReport } from '../api/convert.js'
 
 const reportStatus = {
   waiting: { color: 'orange', label: 'Waiting for the manager' },
@@ -19,23 +14,47 @@ const reportStatus = {
   fixed: { color: 'grey', label: 'Fixed' },
 }
 
+// Everything the home page needs, loaded at the same time
+async function loadHome() {
+  const [profile, chores, groceries, tickets] = await Promise.all([
+    getProfile(), getMyChores(3), getGroceries(), getHouseTickets(),
+  ])
+  return { profile, chores, groceries, tickets }
+}
+
 function TenantPage() {
-  const [chores, setChores] = useState(myChores)
-  const [items, setItems] = useState(supplies.slice(0, 4))
-  const myReports = reports.filter((r) => r.mine && r.status !== 'fixed')
+  const { data, error, reload } = useApi(loadHome)
+  const [actionError, setActionError] = useState('')
 
-  function markDone(id) {
-    setChores(chores.map((c) => (c.id === id ? { ...c, done: true } : c)))
+  async function markDone(id) {
+    try {
+      await markChoreDone(id)
+      reload()
+    } catch (err) {
+      setActionError(err.message)
+    }
   }
 
-  function bought(id) {
-    setItems(items.map((i) => (i.id === id ? { ...i, status: 'enough' } : i)))
+  async function bought(id) {
+    try {
+      await markBought(id)
+      reload()
+    } catch (err) {
+      setActionError(err.message)
+    }
   }
+
+  const profile = data ? data.profile : null
+  const chores = data ? data.chores : []
+  const items = data ? data.groceries.filter((g) => !g.is_bought).slice(0, 4) : []
+  const myReports = data
+    ? data.tickets.map((t) => toReport(t, profile.user_id)).filter((r) => r.mine && r.status !== 'fixed')
+    : []
 
   return (
     <>
       <PageHeader
-        eyebrow={`Tenant · ${tenantInfo.house} · Room ${tenantInfo.room}`}
+        eyebrow={profile ? `Tenant · ${profile.house_name} · Room ${profile.room_number || '-'}` : 'Tenant'}
         title="Your house today."
         titleMuted="Chores, groceries and repairs in one place."
         image={tenantPhoto}
@@ -45,6 +64,8 @@ function TenantPage() {
       </PageHeader>
 
       <div className="page-body">
+        {(error || actionError) && <p className="error">{error || actionError}</p>}
+
         <h2 className="section-title">To do</h2>
         <div className="grid-2">
           <section className="card">
@@ -52,29 +73,29 @@ function TenantPage() {
               <h2>Your chores</h2>
               <Link to="/tenant/schedule" className="card-link">Full schedule</Link>
             </div>
-            {chores.map((chore, index) => (
-              <div className="list-row" key={chore.id}>
-                <div className="row-left">
-                  <div className={'date-box' + (index === 0 ? ' highlight' : '')}>
-                    <span>{chore.day}</span>
-                    <strong>{chore.date}</strong>
+            {data && chores.length === 0 && <p className="row-sub">No chores for you. Enjoy!</p>}
+            {chores.map((chore, index) => {
+              const due = fromDateText(chore.due_date)
+              return (
+                <div className="list-row" key={chore.assignment_id}>
+                  <div className="row-left">
+                    <div className={'date-box' + (index === 0 ? ' highlight' : '')}>
+                      <span>{due.toLocaleDateString('en-GB', { weekday: 'short' })}</span>
+                      <strong>{due.getDate()}</strong>
+                    </div>
+                    <div>
+                      <strong>{chore.chore_title}</strong>
+                      <p className="row-sub">{chore.area || (chore.status === 'MISSED' ? 'Not done yet' : '')}</p>
+                    </div>
                   </div>
-                  <div>
-                    <strong>{chore.title}</strong>
-                    <p className="row-sub">{chore.text}</p>
-                  </div>
-                </div>
-                {chore.done ? (
-                  <span className="saved"><Icon name="check" /> Done</span>
-                ) : (
-                  index === 0 && (
-                    <button className="btn btn-small" onClick={() => markDone(chore.id)}>
+                  {index === 0 && (
+                    <button className="btn btn-small" onClick={() => markDone(chore.assignment_id)}>
                       Mark as done
                     </button>
-                  )
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              )
+            })}
           </section>
 
           <section className="card">
@@ -82,19 +103,18 @@ function TenantPage() {
               <h2>Household supplies</h2>
               <Link to="/tenant/groceries" className="card-link">See shared groceries</Link>
             </div>
+            {data && items.length === 0 && (
+              <p className="saved"><Icon name="check" /> Nothing on the shopping list</p>
+            )}
             {items.map((item) => (
-              <div className="list-row" key={item.id}>
+              <div className="list-row" key={item.item_id}>
                 <strong>{item.name}</strong>
                 <div className="row-right">
-                  <StatusDot color={supplyStatus[item.status].color}>
-                    {supplyStatus[item.status].label}
-                  </StatusDot>
+                  <StatusDot color="orange">To buy</StatusDot>
                   <span className="button-space">
-                    {item.status !== 'enough' && (
-                      <button className="btn btn-small" onClick={() => bought(item.id)}>
-                        I bought it
-                      </button>
-                    )}
+                    <button className="btn btn-small" onClick={() => bought(item.item_id)}>
+                      I bought it
+                    </button>
                   </span>
                 </div>
               </div>
@@ -108,6 +128,7 @@ function TenantPage() {
             <h2>Maintenance</h2>
             <Link to="/tenant/report" className="btn btn-small">Report a problem</Link>
           </div>
+          {data && myReports.length === 0 && <p className="row-sub">You have no open reports.</p>}
           {myReports.map((report) => (
             <div className="list-row" key={report.id}>
               <div>

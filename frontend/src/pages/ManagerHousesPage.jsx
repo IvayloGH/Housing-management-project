@@ -1,53 +1,64 @@
 import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
-import RoomTypesEditor from '../components/RoomTypesEditor.jsx'
-import { describeRooms } from '../utils/describeRooms.js'
-import { houses as startHouses, technicians as startTechnicians } from '../data/mockData.js'
 import Icon from '../components/Icon.jsx'
 import housesPhoto from '../assets/photos/manager-houses.jpg'
+import { useApi } from '../api/useApi.js'
+import { addHouse, editHouse, getHouses, getTeam } from '../api/roomify.js'
 
-const emptyHouse = { street: '', city: '', roomTypes: { Bedroom: 1, Kitchen: 1, Bathroom: 1 } }
+const emptyHouse = { street: '', city: '' }
+
+// The backend keeps name = street and address = "street, city"
+function toHouse(h) {
+  const city = h.address.includes(', ') ? h.address.slice(h.address.lastIndexOf(', ') + 2) : ''
+  return { id: h.house_id, street: h.name, city, tenants: h.tenant_count, openReports: h.open_ticket_count }
+}
+
+async function loadHousesAndTeam() {
+  const [houses, team] = await Promise.all([getHouses(), getTeam()])
+  return { houses: houses.map(toHouse), team }
+}
 
 function ManagerHousesPage() {
-  const [houses, setHouses] = useState(startHouses)
+  const { data, error, reload } = useApi(loadHousesAndTeam)
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState(emptyHouse)
   const [newHouse, setNewHouse] = useState(emptyHouse)
   const [houseError, setHouseError] = useState('')
-  const [technicians, setTechnicians] = useState(startTechnicians)
-  const [newTech, setNewTech] = useState('')
+
+  const houses = data ? data.houses : []
+  const technicians = data ? data.team : []
 
   function startEdit(house) {
     setEditingId(house.id)
-    setEditForm({ street: house.street, city: house.city, roomTypes: house.roomTypes })
+    setEditForm({ street: house.street, city: house.city })
+    setHouseError('')
   }
 
-  function saveEdit(event) {
+  async function saveEdit(event) {
     event.preventDefault()
-    setHouses(houses.map((h) => (h.id === editingId ? { ...h, ...editForm } : h)))
-    setEditingId(null)
+    try {
+      await editHouse(editingId, editForm.street.trim(), editForm.city.trim())
+      setEditingId(null)
+      reload()
+    } catch (err) {
+      setHouseError(err.message)
+    }
   }
 
-  function addHouse(event) {
+  async function handleAddHouse(event) {
     event.preventDefault()
     if (!newHouse.street.trim() || !newHouse.city.trim()) {
       setHouseError('Fill in the street and the city.')
       return
     }
-    if (Object.keys(newHouse.roomTypes).length === 0) {
-      setHouseError('Add at least one room.')
-      return
+    try {
+      await addHouse(newHouse.street.trim(), newHouse.city.trim())
+      setNewHouse(emptyHouse)
+      setHouseError('')
+      reload()
+    } catch (err) {
+      setHouseError(err.message)
     }
-    setHouses([...houses, { id: Date.now(), ...newHouse, tenants: 0 }])
-    setNewHouse(emptyHouse)
-    setHouseError('')
-  }
-
-  function addTechnician(event) {
-    event.preventDefault()
-    if (!newTech.trim()) return
-    setTechnicians([...technicians, { id: Date.now(), name: newTech.trim(), skills: '' }])
-    setNewTech('')
   }
 
   return (
@@ -60,6 +71,8 @@ function ManagerHousesPage() {
       />
 
       <div className="page-body stack">
+        {error && <p className="error">{error}</p>}
+
         <section className="card">
           <div className="card-head">
             <h2>Your houses</h2>
@@ -82,11 +95,6 @@ function ManagerHousesPage() {
                       onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} required />
                   </div>
                 </div>
-                <p className="label-strong">Rooms in this house</p>
-                <RoomTypesEditor
-                  value={editForm.roomTypes}
-                  onChange={(roomTypes) => setEditForm({ ...editForm, roomTypes })}
-                />
                 <div className="button-row">
                   <button type="submit" className="btn btn-small">Save</button>
                   <button type="button" className="link-button" onClick={() => setEditingId(null)}>Cancel</button>
@@ -98,7 +106,7 @@ function ManagerHousesPage() {
                   <span className="house-icon" aria-hidden="true"><Icon name="house" size={18} /></span>
                   <div>
                     <strong>{house.street}, {house.city}</strong>
-                    <p className="row-sub">{describeRooms(house.roomTypes)} · {house.tenants} tenants</p>
+                    <p className="row-sub">{house.tenants} tenants · {house.openReports} open reports</p>
                   </div>
                 </div>
                 <button className="link-button" onClick={() => startEdit(house)}>Edit</button>
@@ -106,7 +114,7 @@ function ManagerHousesPage() {
             )
           )}
 
-          <form className="list-row stacked" onSubmit={addHouse}>
+          <form className="list-row stacked" onSubmit={handleAddHouse}>
             <strong>Add a house</strong>
             <div className="house-fields two">
               <div className="field">
@@ -120,11 +128,7 @@ function ManagerHousesPage() {
                   onChange={(e) => setNewHouse({ ...newHouse, city: e.target.value })} />
               </div>
             </div>
-            <p className="label-strong">Rooms in this house</p>
-            <RoomTypesEditor
-              value={newHouse.roomTypes}
-              onChange={(roomTypes) => setNewHouse({ ...newHouse, roomTypes })}
-            />
+            <p className="row-sub">Tenants join this house by filling in the same street and city when they sign up.</p>
             {houseError && <p className="error">{houseError}</p>}
             <div>
               <button type="submit" className="btn btn-small">Add house</button>
@@ -139,29 +143,18 @@ function ManagerHousesPage() {
           </div>
 
           {technicians.map((t) => (
-            <div className="list-row" key={t.id}>
+            <div className="list-row" key={t.user_id}>
               <div className="row-left">
                 <span className="avatar">{t.name[0]}</span>
                 <div>
                   <strong>{t.name}</strong>
-                  {t.skills && <p className="row-sub">{t.skills}</p>}
+                  {t.specialty && <p className="row-sub">{t.specialty}</p>}
                 </div>
               </div>
             </div>
           ))}
 
-          <form className="list-row stacked" onSubmit={addTechnician}>
-            <strong>Add a technician</strong>
-            <div className="add-row tight">
-              <input
-                placeholder="Their name, e.g. Sofia Marin"
-                aria-label="Technician name"
-                value={newTech}
-                onChange={(e) => setNewTech(e.target.value)}
-              />
-              <button type="submit" className="btn btn-small">Add</button>
-            </div>
-          </form>
+          <p className="row-sub">New technicians join by creating their own account and choosing “Technician”.</p>
         </section>
       </div>
     </>

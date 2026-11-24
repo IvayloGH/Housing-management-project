@@ -23,10 +23,12 @@ function RegisterPage() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
+    setError('')
     try {
-      const user = register({ role, name, email, password, street, postcode, city, room })
+      // The postcode is not stored: a house is found by street + city
+      const user = await register({ role, name, email, password, street, postcode, city, room })
       navigate('/' + user.role)
     } catch (err) {
       setError(err.message)

@@ -3,19 +3,50 @@ import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
 import { PersonalDetailsCard, SignInCard, LogoutCard } from '../components/ProfileCards.jsx'
-import { technicianInfo } from '../data/mockData.js'
+import { useApi } from '../api/useApi.js'
+import { getProfile, updateProfile } from '../api/roomify.js'
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hours = ['06:00', '07:00', '08:00', '09:00', '10:00', '12:00', '14:00', '16:00', '17:00', '18:00', '20:00', '22:00']
 
+const standardSkills = [
+  'Plumbing', 'Heating', 'Electrical', 'Cleaning', 'Small repairs',
+  'Carpentry', 'Locks & doors', 'Appliances', 'Painting',
+]
+
+// Loads the profile first, then shows the page
 function TechnicianProfilePage() {
+  const { data, error } = useApi(getProfile)
+  if (!data) {
+    return (
+      <>
+        <PageHeader eyebrow="Technician · My profile" title="What you're good at." />
+        <div className="page-body">{error ? <p className="error">{error}</p> : <p className="row-sub">Loading…</p>}</div>
+      </>
+    )
+  }
+  return <TechnicianProfile profile={data} />
+}
+
+function TechnicianProfile({ profile }) {
+  // The backend keeps the specialties as one text: "Plumbing, Small repairs"
+  const mySkills = profile.specialty ? profile.specialty.split(', ').filter(Boolean) : []
   // Specialties: all options, and the ones that are chosen
-  const [skillOptions, setSkillOptions] = useState([
-    'Plumbing', 'Heating', 'Electrical', 'Cleaning', 'Small repairs',
-    'Carpentry', 'Locks & doors', 'Appliances', 'Painting',
-  ])
-  const [skills, setSkills] = useState(['Plumbing', 'Small repairs'])
+  const [skillOptions, setSkillOptions] = useState([...standardSkills, ...mySkills.filter((s) => !standardSkills.includes(s))])
+  const [skills, setSkills] = useState(mySkills)
   const [newSkill, setNewSkill] = useState('')
+  const [skillsSaved, setSkillsSaved] = useState(false)
+  const [skillsError, setSkillsError] = useState('')
+
+  async function saveSkills() {
+    setSkillsError('')
+    try {
+      await updateProfile({ specialty: skills.join(', ') })
+      setSkillsSaved(true)
+    } catch (err) {
+      setSkillsError(err.message)
+    }
+  }
 
   // When and where you work
   const [days, setDays] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
@@ -33,6 +64,7 @@ function TechnicianProfilePage() {
     if (skill === '') return
     if (!skillOptions.includes(skill)) setSkillOptions([...skillOptions, skill])
     if (!skills.includes(skill)) setSkills([...skills, skill])
+    setSkillsSaved(false)
     setNewSkill('')
   }
 
@@ -50,7 +82,7 @@ function TechnicianProfilePage() {
   return (
     <>
       <PageHeader
-        eyebrow={`Technician · ${technicianInfo.fullName} · My profile`}
+        eyebrow={`Technician · ${profile.name} · My profile`}
         title="What you're good at."
       />
 
@@ -58,7 +90,12 @@ function TechnicianProfilePage() {
         <section className="card">
           <h2>Your specialties</h2>
           <p className="card-text-small">Pick everything you can fix. You only get jobs that match.</p>
-          <ChipGroup options={skillOptions} value={skills} onChange={setSkills} multiple />
+          <ChipGroup
+            options={skillOptions}
+            value={skills}
+            onChange={(newSkills) => { setSkills(newSkills); setSkillsSaved(false) }}
+            multiple
+          />
           <form className="add-row tight" onSubmit={addSkill}>
             <input
               placeholder="Something else? Type it here"
@@ -68,6 +105,11 @@ function TechnicianProfilePage() {
             />
             <button type="submit" className="btn btn-small">Add</button>
           </form>
+          {skillsError && <p className="error">{skillsError}</p>}
+          <div className="card-footer">
+            <button type="button" className="btn" onClick={saveSkills}>Save specialties</button>
+            {skillsSaved && <span className="saved"><Icon name="check" /> Saved</span>}
+          </div>
         </section>
 
         <section className="card">

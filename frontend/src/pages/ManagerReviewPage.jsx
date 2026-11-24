@@ -4,7 +4,9 @@ import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
 import PhotoView from '../components/PhotoView.jsx'
-import { reports, technicians, assignReport, removeReport } from '../data/mockData.js'
+import { useApi } from '../api/useApi.js'
+import { addNote, assignTicket, declineTicket, getManagerTickets, getTeam, updateTicket } from '../api/roomify.js'
+import { toReport, urgencyCode } from '../api/convert.js'
 
 const categories = ['Plumbing', 'Electrical', 'Heating', 'Cleaning', 'Small repairs', 'Other']
 const doneByOptions = ['As soon as possible', 'Today', 'This week', 'Next week']
@@ -17,11 +19,32 @@ function categoryOf(report) {
   return 'Other'
 }
 
+async function loadReview() {
+  const [tickets, team] = await Promise.all([getManagerTickets(), getTeam()])
+  return {
+    reports: tickets.map((t) => toReport(t)),
+    technicians: team.map((t) => ({ id: t.user_id, name: t.name, skills: t.specialty || '' })),
+  }
+}
+
+// Loads the reports first, then shows the review screen
 function ManagerReviewPage() {
-  // The address can say which report to open, e.g. /manager/review?report=2
+  const { data, error } = useApi(loadReview)
   const [searchParams] = useSearchParams()
   const askedId = Number(searchParams.get('report'))
 
+  if (!data) {
+    return (
+      <>
+        <PageHeader eyebrow="Property manager · Review & assign" title="Send the right technician." />
+        <div className="page-body">{error ? <p className="error">{error}</p> : <p className="row-sub">Loading…</p>}</div>
+      </>
+    )
+  }
+  return <ReviewScreen reports={data.reports} technicians={data.technicians} askedId={askedId} />
+}
+
+function ReviewScreen({ reports, technicians, askedId }) {
   // The reports that wait for the manager (plus the asked one, if it is already in progress)
   const waiting = reports.filter((r) => r.status === 'waiting' || r.id === askedId)
   // The report to show first: the asked one, otherwise the first one
@@ -40,6 +63,7 @@ function ManagerReviewPage() {
   const [technician, setTechnician] = useState('')
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const selected = list.find((r) => r.id === selectedId)
   // Show 3 cards, or all of them after "See all"
@@ -75,20 +99,34 @@ function ManagerReviewPage() {
     setMessage(text)
   }
 
-  function handleSave(event) {
+  async function handleSave(event) {
     event.preventDefault()
-    if (technician === '') {
+    const chosen = technicians.find((t) => t.name === technician)
+    if (!chosen) {
       setError('Choose a technician from the list.')
       return
     }
-    const firstName = technician.split(' ')[0]
-    assignReport(selected.id, firstName, urgency, category)
-    finish(selected.title + ' is sent to ' + technician)
+    setSaving(true)
+    try {
+      await updateTicket(selected.id, { urgency: urgencyCode[urgency], category })
+      // There is no date column yet, so "Done by" goes to the technician as a note
+      const noteText = 'Done by: ' + doneBy + (note.trim() ? '\n' + note.trim() : '')
+      await addNote(selected.id, noteText)
+      await assignTicket(selected.id, chosen.id)
+      finish(selected.title + ' is sent to ' + chosen.name)
+    } catch (err) {
+      setError(err.message)
+    }
+    setSaving(false)
   }
 
-  function handleDecline() {
-    removeReport(selected.id)
-    finish(selected.title + ' is declined')
+  async function handleDecline() {
+    try {
+      await declineTicket(selected.id)
+      finish(selected.title + ' is declined')
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   return (
@@ -220,8 +258,10 @@ function ManagerReviewPage() {
               {error && <p className="error">{error}</p>}
 
               <div className="assign-buttons">
-                <button type="button" className="btn btn-light" onClick={handleDecline}>Decline report</button>
-                <button type="submit" className="btn">Save</button>
+                {selected.status === 'waiting' && (
+                  <button type="button" className="btn btn-light" onClick={handleDecline}>Decline report</button>
+                )}
+                <button type="submit" className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
               </div>
             </form>
           </div>

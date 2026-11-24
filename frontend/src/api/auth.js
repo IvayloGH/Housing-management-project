@@ -1,41 +1,46 @@
 // Login, register and password functions.
-// For now they use fake users. Later they will ask Ivaylo's backend instead
-// (for example POST /auth/login), and the pages don't have to change.
+// Login and register ask the backend (POST /auth/login, POST /auth/register).
+// Forgot password and face login are NOT connected yet: they wait for Eszter's security work.
+import { api, clearToken, saveToken } from './client.js'
+import { rolePage } from './convert.js'
 
-const fakeUsers = [
-  { email: 'tenant@roomify.nl', password: 'test123', role: 'tenant' },
-  { email: 'manager@roomify.nl', password: 'test123', role: 'manager' },
-  { email: 'tech@roomify.nl', password: 'test123', role: 'technician' },
-]
-
-// Remembers who logged in last on this computer, so face login knows who you are.
-// localStorage is a small storage in the browser that stays after a refresh.
-function rememberUser(email) {
-  localStorage.setItem('roomify-face-user', email)
+// Who is logged in. role is the page name: 'tenant', 'manager' or 'technician'
+async function whoAmI() {
+  const user = await api('/auth/me')
+  return { ...user, role: rolePage(user.role) }
 }
 
-// Log in with email and password. Gives back the user, or an error.
-export function login(email, password) {
-  const user = fakeUsers.find((u) => u.email === email && u.password === password)
-  if (!user) {
-    throw new Error('Wrong email or password')
-  }
-  rememberUser(user.email)
-  return user
+// Log in with email and password. Gives back the user, or throws an error.
+export async function login(email, password) {
+  const answer = await api('/auth/login', { method: 'POST', body: { email, password } })
+  saveToken(answer.access_token)
+  return whoAmI()
 }
 
-// Create a new account. New accounts are gone after a page refresh.
-export function register(newUser) {
+// Create a new account and log in straight away.
+// Tenants join their house by its address (street + city must match a house in Roomify).
+export async function register(newUser) {
   if (newUser.password.length < 8) {
     throw new Error('Your password needs at least 8 characters')
   }
-  const alreadyExists = fakeUsers.find((u) => u.email === newUser.email)
-  if (alreadyExists) {
-    throw new Error('There is already an account with this email')
-  }
-  fakeUsers.push(newUser)
-  rememberUser(newUser.email)
-  return newUser
+  const answer = await api('/auth/register', {
+    method: 'POST',
+    body: {
+      name: newUser.name,
+      email: newUser.email,
+      password: newUser.password,
+      role: newUser.role === 'manager' ? 'property_manager' : newUser.role,
+      street: newUser.street || null,
+      city: newUser.city || null,
+      room_number: newUser.room || null,
+    },
+  })
+  saveToken(answer.access_token)
+  return whoAmI()
+}
+
+export function logout() {
+  clearToken()
 }
 
 // Waits a moment, so the fake functions below feel like a real server.
@@ -55,26 +60,16 @@ export async function verifyFace() {
   await wait(2000)
 }
 
-// Forgot password, step 3: save the new password.
+// Forgot password, step 3: save the new password. Not connected yet (needs Eszter's part).
 export async function resetPassword(email, newPassword) {
   await wait(800)
   if (newPassword.length < 8) {
     throw new Error('Your password needs at least 8 characters')
   }
-  const user = fakeUsers.find((u) => u.email === email)
-  if (user) {
-    user.password = newPassword
-  }
 }
 
-// Log in with your face. Later: the backend recognises the face.
-// For now we use the last person who logged in on this computer.
+// Log in with your face. Not connected yet (needs Eszter's part).
 export async function faceLogin() {
   await wait(2000)
-  const email = localStorage.getItem('roomify-face-user')
-  const user = fakeUsers.find((u) => u.email === email)
-  if (!user) {
-    throw new Error("We couldn't recognise you. Log in with your password first.")
-  }
-  return user
+  throw new Error('Face login is not ready yet. Please log in with your password.')
 }

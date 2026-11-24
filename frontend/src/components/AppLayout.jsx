@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import Logo from './Logo.jsx'
 import NotificationBell from './NotificationBell.jsx'
+import { logout } from '../api/auth.js'
 import Icon from './Icon.jsx'
 
 // Menu items per role, from the Figma design.
@@ -52,7 +53,7 @@ function AppLayout() {
         {/* key={role}: a new list of notifications when the role changes */}
         <NotificationBell key={role} role={role} />
 
-        <button className="logout" onClick={() => navigate('/')}>
+        <button className="logout" onClick={() => { logout(); navigate('/') }}>
           Log out
         </button>
       </header>

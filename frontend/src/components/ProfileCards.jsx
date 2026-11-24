@@ -2,41 +2,55 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import FaceCamera from './FaceCamera.jsx'
 import Icon from './Icon.jsx'
+import { useApi } from '../api/useApi.js'
+import { changePassword, getProfile, updateProfile } from '../api/roomify.js'
+import { logout } from '../api/auth.js'
 
 // Cards that are used on the profile page of every role
 
-// "Personal details": name, phone, email and one optional extra field (e.g. Company)
-export function PersonalDetailsCard({ title = 'Personal details', extraField }) {
-  const [saved, setSaved] = useState(false)
+// "Personal details": name and email, saved in the backend
+export function PersonalDetailsCard({ title = 'Personal details' }) {
+  const { data } = useApi(getProfile)
+  // Show the page first, then the form when the profile is loaded
+  return (
+    <section className="card">
+      {data ? <DetailsForm title={title} profile={data} /> : <h2>{title}</h2>}
+    </section>
+  )
+}
 
-  function handleSubmit(event) {
+function DetailsForm({ title, profile }) {
+  const [name, setName] = useState(profile.name)
+  const [email, setEmail] = useState(profile.email)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(event) {
     event.preventDefault()
-    setSaved(true)
+    setError('')
+    try {
+      await updateProfile({ name, email })
+      setSaved(true)
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} onChange={() => setSaved(false)}>
+    <form onSubmit={handleSubmit} onChange={() => setSaved(false)}>
       <h2>{title}</h2>
       <div className="form-grid">
         <div className="field">
           <label htmlFor="name">Full name</label>
-          <input id="name" placeholder="Your full name" />
-        </div>
-        <div className="field">
-          <label htmlFor="phone">Phone</label>
-          <input id="phone" type="tel" placeholder="Your phone number" />
+          <input id="name" placeholder="Your full name" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
         <div className="field">
           <label htmlFor="email">Email</label>
-          <input id="email" type="email" placeholder="Your email address" />
+          <input id="email" type="email" placeholder="Your email address" value={email}
+            onChange={(e) => setEmail(e.target.value)} required />
         </div>
-        {extraField && (
-          <div className="field">
-            <label htmlFor="extra">{extraField}</label>
-            <input id="extra" placeholder={extraField + ' name'} />
-          </div>
-        )}
       </div>
+      {error && <p className="error">{error}</p>}
       <div className="card-footer">
         <button type="submit" className="btn">Save changes</button>
         {saved && <span className="saved"><Icon name="check" /> Saved</span>}
@@ -45,41 +59,16 @@ export function PersonalDetailsCard({ title = 'Personal details', extraField }) 
   )
 }
 
-// "Your home": the tenant's address
+// "Your home": the tenant's house and room
 export function AddressCard() {
-  const [saved, setSaved] = useState(false)
-
-  function handleSubmit(event) {
-    event.preventDefault()
-    setSaved(true)
-  }
-
+  const { data } = useApi(getProfile)
   return (
-    <form className="card" onSubmit={handleSubmit} onChange={() => setSaved(false)}>
+    <section className="card">
       <h2>Your home</h2>
-      <div className="form-grid">
-        <div className="field">
-          <label htmlFor="street">Street and house number</label>
-          <input id="street" placeholder="Street and house number" />
-        </div>
-        <div className="field">
-          <label htmlFor="postcode">Postcode</label>
-          <input id="postcode" placeholder="Postcode" />
-        </div>
-        <div className="field">
-          <label htmlFor="city">City</label>
-          <input id="city" placeholder="City" />
-        </div>
-        <div className="field">
-          <label htmlFor="room">Room number</label>
-          <input id="room" placeholder="Room number" />
-        </div>
-      </div>
-      <div className="card-footer">
-        <button type="submit" className="btn">Update address</button>
-        {saved && <span className="saved"><Icon name="check" /> Saved</span>}
-      </div>
-    </form>
+      <div className="detail-row"><span>House</span><strong>{data ? data.house_name : '…'}</strong></div>
+      <div className="detail-row"><span>Room</span><strong>{data ? data.room_number || '-' : '…'}</strong></div>
+      <p className="row-sub">Moving to another house? Ask your property manager.</p>
+    </section>
   )
 }
 
@@ -87,24 +76,32 @@ export function AddressCard() {
 export function SignInCard() {
   const [showPassword, setShowPassword] = useState(false)
   const [passwordSaved, setPasswordSaved] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [showCamera, setShowCamera] = useState(false)
   const [checking, setChecking] = useState(false)
   const [faceOn, setFaceOn] = useState(false)
 
-  function savePassword(event) {
+  async function savePassword(event) {
     event.preventDefault()
     if (newPassword.length < 8) {
       setPasswordError('Your password needs at least 8 characters')
       return
     }
-    setPasswordError('')
-    setNewPassword('')
-    setShowPassword(false)
-    setPasswordSaved(true)
+    try {
+      await changePassword(currentPassword, newPassword)
+      setPasswordError('')
+      setCurrentPassword('')
+      setNewPassword('')
+      setShowPassword(false)
+      setPasswordSaved(true)
+    } catch (err) {
+      setPasswordError(err.message)
+    }
   }
 
+  // Face login is not connected to the backend yet (Eszter's part)
   function saveFace() {
     setChecking(true)
     setTimeout(() => {
@@ -129,6 +126,16 @@ export function SignInCard() {
       </div>
       {showPassword && (
         <form className="inline-form" onSubmit={savePassword}>
+          <div className="field">
+            <label htmlFor="current-password">Current password</label>
+            <input
+              id="current-password"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+            />
+          </div>
           <div className="field">
             <label htmlFor="new-password">New password</label>
             <input
@@ -172,7 +179,7 @@ export function LogoutCard() {
   return (
     <section className="card card-row">
       <h2>Log out</h2>
-      <button type="button" className="btn btn-light" onClick={() => navigate('/')}>
+      <button type="button" className="btn btn-light" onClick={() => { logout(); navigate('/') }}>
         Log out
       </button>
     </section>

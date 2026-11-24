@@ -6,7 +6,7 @@ function ManagerProfilePage() {
     <>
       <PageHeader eyebrow="Property manager · My profile" title="Your profile." />
       <div className="page-body stack">
-        <PersonalDetailsCard extraField="Company" />
+        <PersonalDetailsCard />
         <SignInCard />
         <LogoutCard />
       </div>

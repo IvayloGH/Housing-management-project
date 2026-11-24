@@ -4,3 +4,4 @@ __pycache__/
 *.db
 .env
 main_dev.py
+uploads/

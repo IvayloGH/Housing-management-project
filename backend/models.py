@@ -126,3 +126,13 @@ class ExpenseShare(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant.user_id"), primary_key=True)
     amount_owed: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     is_settled: Mapped[bool] = mapped_column(server_default="0")
+
+
+class Notification(Base):
+    __tablename__ = "notification"
+
+    notification_id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"))
+    message: Mapped[str] = mapped_column(String(255))
+    is_read: Mapped[bool] = mapped_column(server_default="0")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.sysutcdatetime())

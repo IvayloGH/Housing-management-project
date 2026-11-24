@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import House, MaintenanceTicket, Technician, Tenant, User
-from schemas import HouseOut, ManagerOverview, TechnicianOut, TenantOut
+from schemas import HouseOut, HouseSave, ManagerOverview, TechnicianOut, TenantOut
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/houses", tags=["Houses"])
@@ -102,3 +102,44 @@ def house_tenants(house_id: int, db: Session = Depends(get_db), user: User = Dep
         TenantOut(user_id=u.user_id, name=u.name, email=u.email, room_number=t.room_number)
         for u, t in rows
     ]
+
+
+def house_out(db: Session, house: House) -> HouseOut:
+    tenants = db.scalar(select(func.count()).select_from(Tenant).where(Tenant.house_id == house.house_id))
+    open_tickets = db.scalar(
+        select(func.count())
+        .select_from(MaintenanceTicket)
+        .where(MaintenanceTicket.house_id == house.house_id, MaintenanceTicket.status != "RESOLVED")
+    )
+    return HouseOut(
+        house_id=house.house_id, name=house.name, address=house.address,
+        tenant_count=tenants, open_ticket_count=open_tickets,
+    )
+
+
+@router.post("", response_model=HouseOut, status_code=status.HTTP_201_CREATED)
+def add_house(data: HouseSave, db: Session = Depends(get_db), user: User = Depends(require_role("property_manager"))):
+    street, city = data.street.strip(), data.city.strip()
+    house = House(manager_id=user.user_id, name=street, address=f"{street}, {city}")
+    db.add(house)
+    db.commit()
+    db.refresh(house)
+    return house_out(db, house)
+
+
+@router.put("/{house_id}", response_model=HouseOut)
+def edit_house(
+    house_id: int,
+    data: HouseSave,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("property_manager")),
+):
+    house = db.get(House, house_id)
+    if house is None or house.manager_id != user.user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "House not found")
+    street, city = data.street.strip(), data.city.strip()
+    house.name = street
+    house.address = f"{street}, {city}"
+    db.commit()
+    db.refresh(house)
+    return house_out(db, house)

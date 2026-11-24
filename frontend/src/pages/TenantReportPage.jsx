@@ -4,7 +4,9 @@ import StatusDot from '../components/StatusDot.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
 import PhotoView from '../components/PhotoView.jsx'
-import { tenantInfo, reports, addReport } from '../data/mockData.js'
+import { useApi } from '../api/useApi.js'
+import { getHouseTickets, getProfile, reportProblem, uploadPhoto } from '../api/roomify.js'
+import { toReport, urgencyCode } from '../api/convert.js'
 
 const rooms = ['Kitchen', 'Bathroom 1', 'Bathroom 2', 'Hallway', 'Living room', 'My room']
 
@@ -19,69 +21,78 @@ function ReportStatus({ report }) {
   return <StatusDot color="grey">Fixed by {report.technician}</StatusDot>
 }
 
+async function loadReports() {
+  const [profile, tickets] = await Promise.all([getProfile(), getHouseTickets()])
+  return { profile, tickets }
+}
+
 function TenantReportPage() {
+  const { data, error: loadError, reload } = useApi(loadReports)
   const [room, setRoom] = useState('')
   const [description, setDescription] = useState('')
-  const [photo, setPhoto] = useState(null)
+  const [photo, setPhoto] = useState(null) // temporary web address, to show the photo
+  const [photoFile, setPhotoFile] = useState(null) // the file itself, to upload
   const [urgency, setUrgency] = useState('')
   const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
+
   // Only the reports of this tenant
-  const [myReports, setMyReports] = useState(reports.filter((r) => r.mine))
+  const myReports = data ? data.tickets.map((t) => toReport(t, data.profile.user_id)).filter((r) => r.mine) : []
 
   function handlePhoto(event) {
     const file = event.target.files[0]
     if (file) {
       // Makes a temporary web address for the photo, so we can show it on the page
       setPhoto(URL.createObjectURL(file))
+      setPhotoFile(file)
     }
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     if (room === '' || description.trim() === '' || urgency === '') {
       setError('Choose a room, describe the problem and pick the urgency.')
       return
     }
 
-    const report = {
-      id: Date.now(), // the current time in milliseconds: a simple unique number
-      // The title is the first sentence of the description (max. 40 letters)
-      title: description.trim().split('.')[0].slice(0, 40),
-      category: 'Other',
-      house: 'Kerkstraat 12',
-      room: room,
-      urgency: urgency,
-      status: 'waiting',
-      reportedBy: 'You',
-      posted: 'Just now',
-      technician: null,
-      description: description.trim(),
-      photo: photo,
-      mine: true,
-    }
-
-    // Add it to the shared fake data too, so the manager can see it
-    addReport(report)
-    setMyReports([report, ...myReports])
-
-    // Empty the form again
-    setRoom('')
-    setDescription('')
-    setPhoto(null)
-    setUrgency('')
+    setSending(true)
     setError('')
-    setSent(true)
+    try {
+      const ticket = await reportProblem({
+        // The title is the first sentence of the description (max. 40 letters)
+        title: description.trim().split('.')[0].slice(0, 40),
+        description: description.trim(),
+        location: room,
+        category: 'Other', // the manager picks the real category
+        urgency: urgencyCode[urgency],
+      })
+      if (photoFile) await uploadPhoto(ticket.ticket_id, photoFile)
+
+      // Empty the form again
+      setRoom('')
+      setDescription('')
+      setPhoto(null)
+      setPhotoFile(null)
+      setUrgency('')
+      setSent(true)
+      reload()
+    } catch (err) {
+      setError(err.message)
+    }
+    setSending(false)
   }
 
   return (
     <>
       <PageHeader
-        eyebrow={`Tenant · Report a problem · ${tenantInfo.house}`}
+        eyebrow={`Tenant · Report a problem${data ? ' · ' + data.profile.house_name : ''}`}
         title="Something broken? Tell us."
       />
 
       <div className="page-body">
+        {loadError && <p className="error">{loadError}</p>}
+
         <div className="grid-report">
           <form className="card" onSubmit={handleSubmit}>
             <div className="step-row">
@@ -108,10 +119,16 @@ function TenantReportPage() {
             <div className="step-row">
               <span className="step-number">3</span>
               <div>
-                <h3>Add a photo <span className="optional">(optional)</span></h3>
+                <h3>Add a photo <span className="optional">(optional, jpg or png, max 5 MB)</span></h3>
                 <label className="btn btn-light btn-small file-button">
                   <Icon name="camera" /> Take or upload a photo
-                  <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} hidden />
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    onChange={handlePhoto}
+                    hidden
+                  />
                 </label>
                 {photo && <img src={photo} alt="Your photo of the problem" className="photo-preview" />}
               </div>
@@ -125,13 +142,16 @@ function TenantReportPage() {
             {error && <p className="error">{error}</p>}
 
             <div className="card-footer no-line">
-              <button type="submit" className="btn">Send report</button>
+              <button type="submit" className="btn" disabled={sending}>
+                {sending ? 'Sending…' : 'Send report'}
+              </button>
               {sent && <span className="saved"><Icon name="check" /> Sent to the property manager</span>}
             </div>
           </form>
 
           <section className="card">
             <h2>Recent reports</h2>
+            {data && myReports.length === 0 && <p className="row-sub">You haven't reported anything yet.</p>}
             {myReports.map((r) => (
               <div className="list-row stacked" key={r.id}>
                 {r.photo && <PhotoView src={r.photo} alt={'Photo of: ' + r.title} size="small" />}

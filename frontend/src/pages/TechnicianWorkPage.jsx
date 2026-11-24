@@ -1,27 +1,61 @@
 import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import StatusDot from '../components/StatusDot.jsx'
-import { technicianInfo, jobs, workHistory, updateJob } from '../data/mockData.js'
 import { todayText } from '../utils/dateText.js'
+import { useApi } from '../api/useApi.js'
+import { addNote, getMyJobs, getProfile, setJobStatus } from '../api/roomify.js'
+import { firstName, toJob } from '../api/convert.js'
+
+// What the technician writes is saved as a ticket note: "Tue 24 Nov · Replaced the drain seal".
+// The work history reads the date back from the start of that note.
+const SEPARATOR = ' · '
+
+function historyOf(tickets) {
+  const rows = []
+  for (const ticket of tickets) {
+    const note = ticket.last_note || ''
+    const at = note.indexOf(SEPARATOR)
+    // Only notes written on this page (they start with a date like "Tue 24 Nov")
+    if (at > 0 && /^\w{3} \d{1,2} \w{3}$/.test(note.slice(0, at))) {
+      const job = toJob(ticket)
+      rows.push({
+        id: job.id,
+        date: note.slice(0, at),
+        title: job.title,
+        place: job.place,
+        text: note.slice(at + SEPARATOR.length),
+        fixed: ticket.status === 'RESOLVED',
+      })
+    }
+  }
+  return rows
+}
+
+async function loadWork() {
+  const [profile, tickets] = await Promise.all([getProfile(), getMyJobs()])
+  return { name: firstName(profile.name), tickets }
+}
 
 function TechnicianWorkPage() {
-  // The jobs that are accepted or in progress (not new and not fixed yet)
-  const [requests, setRequests] = useState(jobs.filter((j) => j.status !== 'New' && j.status !== 'Fixed'))
-  const [selectedId, setSelectedId] = useState(requests.length > 0 ? requests[0].id : null)
-  const [history, setHistory] = useState(workHistory)
+  const { data, error, reload } = useApi(loadWork)
+  const [selectedId, setSelectedId] = useState(null)
 
   // The "Add finished work" form
   const [fixed, setFixed] = useState(true)
   const [date, setDate] = useState(todayText())
   const [text, setText] = useState('')
-  const [error, setError] = useState('')
+  const [formError, setFormError] = useState('')
 
-  const selected = requests.find((r) => r.id === selectedId)
+  const tickets = data ? data.tickets : []
+  // The jobs that are not fixed yet
+  const requests = tickets.filter((t) => t.status !== 'RESOLVED').map(toJob)
+  const history = historyOf(tickets)
+  const selected = requests.find((r) => r.id === selectedId) || requests[0]
 
-  function handleSave(event) {
+  async function handleSave(event) {
     event.preventDefault()
     if (text.trim() === '') {
-      setError('Write what you did.')
+      setFormError('Write what you did.')
       return
     }
 
@@ -30,40 +64,37 @@ function TechnicianWorkPage() {
     const fixDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
     const dateLabel = fixDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 
-    const entry = {
-      id: Date.now(),
-      date: dateLabel,
-      title: selected.title,
-      place: selected.place,
-      text: text.trim(),
-      fixed: fixed,
+    try {
+      await addNote(selected.id, dateLabel + SEPARATOR + text.trim())
+      if (fixed) {
+        // Fixed: the job is done, so it leaves the list of requests
+        await setJobStatus(selected.id, 'RESOLVED')
+      } else if (selected.status === 'New') {
+        await setJobStatus(selected.id, 'IN_PROGRESS')
+      }
+      setText('')
+      setFormError('')
+      setSelectedId(null)
+      reload()
+    } catch (err) {
+      setFormError(err.message)
     }
-    setHistory([entry, ...history])
-
-    // Fixed: the job is done, so it leaves the list of requests
-    if (fixed) {
-      updateJob(selected.id, selected.when, 'Fixed')
-      const rest = requests.filter((r) => r.id !== selected.id)
-      setRequests(rest)
-      setSelectedId(rest.length > 0 ? rest[0].id : null)
-    }
-
-    setText('')
-    setError('')
   }
 
   return (
     <>
-      <PageHeader eyebrow={`Technician · ${technicianInfo.name} · Work done`} title="What you've fixed." />
+      <PageHeader eyebrow={`Technician · ${data ? data.name : ''} · Work done`} title="What you've fixed." />
 
       <div className="page-body">
+        {error && <p className="error">{error}</p>}
+
         <h2 className="section-title">Requests</h2>
         {requests.length > 0 && (
           <div className="grid-3">
             {requests.map((r) => (
               <button
                 key={r.id}
-                className={r.id === selectedId ? 'select-card selected' : 'select-card'}
+                className={selected && r.id === selected.id ? 'select-card selected' : 'select-card'}
                 onClick={() => setSelectedId(r.id)}
               >
                 <span className="row-top">
@@ -71,7 +102,7 @@ function TechnicianWorkPage() {
                   <span className={'urgency urgency-' + r.urgency.toLowerCase()}>{r.urgency}</span>
                 </span>
                 <span className="row-sub">{r.place}</span>
-                <span className="small-strong">{r.status} · {r.when.toLowerCase()}</span>
+                <span className="small-strong">{r.status}</span>
               </button>
             ))}
           </div>
@@ -81,7 +112,7 @@ function TechnicianWorkPage() {
           <form className="card" onSubmit={handleSave}>
             <h2>Add finished work</h2>
 
-            {!selected && <p className="row-sub">All your jobs are done.</p>}
+            {data && !selected && <p className="row-sub">All your jobs are done.</p>}
 
             {selected && (
               <>
@@ -105,7 +136,7 @@ function TechnicianWorkPage() {
 
                 <div className="field">
                   <label htmlFor="date">When did you fix it?</label>
-                  <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  <input id="date" type="date" max={todayText()} value={date} onChange={(e) => setDate(e.target.value)} />
                 </div>
 
                 <div className="field">
@@ -119,7 +150,7 @@ function TechnicianWorkPage() {
                   />
                 </div>
 
-                {error && <p className="error">{error}</p>}
+                {formError && <p className="error">{formError}</p>}
                 <button type="submit" className="btn btn-full">Save</button>
               </>
             )}
@@ -127,6 +158,7 @@ function TechnicianWorkPage() {
 
           <section className="card">
             <h2>Work history</h2>
+            {data && history.length === 0 && <p className="row-sub">Nothing saved yet.</p>}
             {history.map((h) => (
               <div className="history-row" key={h.id}>
                 <strong className="history-date">{h.date}</strong>
