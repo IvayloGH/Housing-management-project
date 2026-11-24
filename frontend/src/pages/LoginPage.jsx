@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { login } from '../api/auth.js'
 import Logo from '../components/Logo.jsx'
 
@@ -55,7 +55,7 @@ function LoginPage() {
           />
         </div>
 
-        <a href="#" className="forgot">Forgot your password?</a>
+        <Link to="/forgot-password" className="forgot">Forgot your password?</Link>
 
         {error && <p className="error">{error}</p>}
 
@@ -63,12 +63,12 @@ function LoginPage() {
 
         <div className="divider">or</div>
 
-        <button type="button" className="btn btn-light btn-full">
-          Sign in with face recognition
-        </button>
+        <Link to="/face-login" className="btn btn-light btn-full">
+          Log in with face recognition
+        </Link>
 
         <p className="login-footer">
-          New here? <a href="#">Create an account</a>
+          New here? <Link to="/register">Create an account</Link>
         </p>
       </form>
     </div>
