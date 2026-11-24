@@ -1,0 +1,7 @@
+venv/
+.venv/
+__pycache__/
+*.db
+.env
+main_dev.py
+uploads/
