@@ -31,7 +31,8 @@ function errorText(data, status) {
 //   api('/groceries')                                  -> GET
 //   api('/groceries', { method: 'POST', body: {...} }) -> send JSON
 //   api('/tickets/3/photos', { method: 'POST', file }) -> upload a file
-export async function api(path, { method = 'GET', body, file } = {}) {
+//   api('/auth/face/setup', { method: 'POST', file, fields: { consent: true } }) -> file + form fields
+export async function api(path, { method = 'GET', body, file, fields } = {}) {
   const headers = {}
   const token = localStorage.getItem(TOKEN_KEY)
   if (token) {
@@ -45,6 +46,7 @@ export async function api(path, { method = 'GET', body, file } = {}) {
   if (file) {
     payload = new FormData()
     payload.append('file', file)
+    Object.entries(fields || {}).forEach(([name, value]) => payload.append(name, String(value)))
   } else if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
     payload = JSON.stringify(body)

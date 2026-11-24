@@ -1,6 +1,7 @@
 // Login, register and password functions.
 // Login and register ask the backend (POST /auth/login, POST /auth/register).
-// Forgot password and face login are NOT connected yet: they wait for Eszter's security work.
+// Face login asks the backend too (POST /auth/face/login).
+// Forgot password is NOT connected yet: it waits for Eszter's security work.
 import { api, clearToken, saveToken } from './client.js'
 import { rolePage } from './convert.js'
 
@@ -68,8 +69,9 @@ export async function resetPassword(email, newPassword) {
   }
 }
 
-// Log in with your face. Not connected yet (needs Eszter's part).
-export async function faceLogin() {
-  await wait(2000)
-  throw new Error('Face login is not ready yet. Please log in with your password.')
+// Log in with only your face: the backend finds out who is in the photo.
+export async function faceLogin(photo) {
+  const answer = await api('/auth/face/login', { method: 'POST', file: photo })
+  saveToken(answer.access_token)
+  return whoAmI()
 }

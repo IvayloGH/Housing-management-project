@@ -10,11 +10,11 @@ function FaceLoginPage() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  async function handleFace() {
+  async function handleFace(photo) {
     setError('')
     setLoading(true)
     try {
-      const user = await faceLogin()
+      const user = await faceLogin(photo)
       navigate('/' + user.role)
     } catch (err) {
       setError(err.message)

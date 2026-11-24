@@ -2347,3 +2347,6 @@ textarea {
 .price-input {
   width: 9rem;
 }
+
+/* Face login: consent before the camera opens */
+.consent { display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 0.75rem; font-size: 0.9rem; }

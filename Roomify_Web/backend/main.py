@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from routers.face import router as face_router
 
 from deps import UPLOAD_DIR
-from routers import auth, chores, expenses, groceries, houses, notifications, tickets, users
+from routers import auth, chores, expenses, face_login, groceries, houses, notifications, tickets, users
 
 app = FastAPI(title="Roomify API")
 
@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, users, groceries, tickets, chores, houses, expenses, notifications):
+for r in (auth, face_login, users, groceries, tickets, chores, houses, expenses, notifications):
     app.include_router(r.router)
 
 app.include_router(face_router)

@@ -12,6 +12,12 @@ export const changePassword = (currentPassword, newPassword) =>
   })
 export const getHousemates = () => api('/users/housemates')
 
+// ---------- Face login ----------
+export const getFaceStatus = () => api('/auth/face')
+export const setupFace = (photo) =>
+  api('/auth/face/setup', { method: 'POST', file: photo, fields: { consent: true } })
+export const turnOffFace = () => api('/auth/face', { method: 'DELETE' })
+
 // ---------- Chores ----------
 export const getSchedule = (year, month) => api(`/chores/schedule?year=${year}&month=${month}`)
 export const getMyChores = (limit = 3) => api('/chores/mine?limit=' + limit)

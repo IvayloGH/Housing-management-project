@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 // Shows your live camera with an oval for your face, and a button under it.
 // loading: true while the face is being checked
-// onVerify: what happens when you click the button
+// onVerify(photo): what happens when you click the button. photo is a JPEG of the camera picture
 function FaceCamera({ loading, onVerify, buttonText = 'Verify my face' }) {
   // videoRef lets us reach the <video> element, to put the camera picture in it
   const videoRef = useRef(null)
@@ -40,6 +40,16 @@ function FaceCamera({ loading, onVerify, buttonText = 'Verify my face' }) {
     }
   }, [])
 
+  // Take a photo of what the camera shows right now, and give it to onVerify
+  function takePhoto() {
+    const video = videoRef.current
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d').drawImage(video, 0, 0)
+    canvas.toBlob((photo) => onVerify(photo), 'image/jpeg', 0.9)
+  }
+
   return (
     <div>
       <div className="camera">
@@ -50,7 +60,7 @@ function FaceCamera({ loading, onVerify, buttonText = 'Verify my face' }) {
 
       {cameraError && <p className="error">{cameraError}</p>}
 
-      <button type="button" className="btn btn-full" onClick={onVerify} disabled={!cameraOn || loading}>
+      <button type="button" className="btn btn-full" onClick={takePhoto} disabled={!cameraOn || loading}>
         {loading ? 'Checking…' : buttonText}
       </button>
     </div>

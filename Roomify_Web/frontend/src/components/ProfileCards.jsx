@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import FaceCamera from './FaceCamera.jsx'
 import Icon from './Icon.jsx'
 import { useApi } from '../api/useApi.js'
-import { changePassword, getProfile, updateProfile } from '../api/roomify.js'
+import { changePassword, getFaceStatus, getProfile, setupFace, turnOffFace, updateProfile } from '../api/roomify.js'
 import { logout } from '../api/auth.js'
 
 // Cards that are used on the profile page of every role
@@ -81,7 +81,10 @@ export function SignInCard() {
   const [passwordError, setPasswordError] = useState('')
   const [showCamera, setShowCamera] = useState(false)
   const [checking, setChecking] = useState(false)
-  const [faceOn, setFaceOn] = useState(false)
+  const [consent, setConsent] = useState(false)
+  const [faceError, setFaceError] = useState('')
+  const face = useApi(getFaceStatus)
+  const faceOn = face.data ? face.data.is_set_up : false
 
   async function savePassword(event) {
     event.preventDefault()
@@ -101,14 +104,28 @@ export function SignInCard() {
     }
   }
 
-  // Face login is not connected to the backend yet (Eszter's part)
-  function saveFace() {
+  // Send the camera photo: the backend keeps only an encrypted template of the face
+  async function saveFace(photo) {
+    setFaceError('')
     setChecking(true)
-    setTimeout(() => {
-      setChecking(false)
+    try {
+      await setupFace(photo)
       setShowCamera(false)
-      setFaceOn(true)
-    }, 2000)
+      face.reload()
+    } catch (err) {
+      setFaceError(err.message)
+    }
+    setChecking(false)
+  }
+
+  async function removeFace() {
+    setFaceError('')
+    try {
+      await turnOffFace()
+      face.reload()
+    } catch (err) {
+      setFaceError(err.message)
+    }
   }
 
   return (
@@ -158,15 +175,27 @@ export function SignInCard() {
             {faceOn ? <><Icon name="check" /> Face login is on</> : 'Log in with your face instead of a password'}
           </p>
         </div>
-        {!faceOn && (
+        {faceOn ? (
+          <button type="button" className="btn btn-light btn-small" onClick={removeFace}>
+            Turn off
+          </button>
+        ) : (
           <button type="button" className="btn btn-light btn-small" onClick={() => setShowCamera(!showCamera)}>
             {showCamera ? 'Cancel' : 'Set up face login'}
           </button>
         )}
       </div>
-      {showCamera && (
+      {faceError && <p className="error">{faceError}</p>}
+      {showCamera && !faceOn && (
         <div className="inline-form camera-small">
-          <FaceCamera loading={checking} onVerify={saveFace} buttonText="Save my face" />
+          <label className="consent">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <span>
+              I agree that Roomify saves an encrypted template of my face (not the photo) to log me in.
+              I can turn it off at any time, and then it is deleted.
+            </span>
+          </label>
+          {consent && <FaceCamera loading={checking} onVerify={saveFace} buttonText="Save my face" />}
         </div>
       )}
     </section>
