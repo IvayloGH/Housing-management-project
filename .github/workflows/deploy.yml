@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'Software/backend/**'
+      - 'Roomify_Web/backend/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -22,11 +22,11 @@ jobs:
       - name: Check that dependencies install
         run: |
           python -m pip install --upgrade pip
-          pip install -r Software/backend/requirements.txt
+          pip install -r Roomify_Web/backend/requirements.txt
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: student-housing-api
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./Software/backend
+          package: ./Roomify_Web/backend
