@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Navigate } from 'react-router'
 import { register } from '../api/auth.js'
+import { useUser } from '../api/userContext.js'
 import Logo from '../components/Logo.jsx'
 import PageHeader from '../components/PageHeader.jsx'
 
@@ -17,21 +18,27 @@ function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [street, setStreet] = useState('')
-  const [postcode, setPostcode] = useState('')
   const [city, setCity] = useState('')
   const [room, setRoom] = useState('')
   const [error, setError] = useState('')
-  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const { user, setUser } = useUser()
+
+  // Logged in (also right after creating the account): go to your home page
+  if (user) {
+    return <Navigate to={'/' + user.role} replace />
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    setBusy(true)
     try {
-      // The postcode is not stored: a house is found by street + city
-      const user = await register({ role, name, email, password, street, postcode, city, room })
-      navigate('/' + user.role)
+      // A house is found by its street + city. Only tenants can sign up themselves.
+      setUser(await register({ name, email, password, street, city, room }))
     } catch (err) {
       setError(err.message)
+      setBusy(false)
     }
   }
 
@@ -110,11 +117,6 @@ function RegisterPage() {
                   onChange={(e) => setStreet(e.target.value)} required />
               </div>
               <div className="field">
-                <label htmlFor="postcode">Postcode</label>
-                <input id="postcode" placeholder="e.g. 5611 AB" value={postcode}
-                  onChange={(e) => setPostcode(e.target.value)} required />
-              </div>
-              <div className="field">
                 <label htmlFor="city">City</label>
                 <input id="city" placeholder="e.g. Eindhoven" value={city}
                   onChange={(e) => setCity(e.target.value)} required />
@@ -132,7 +134,9 @@ function RegisterPage() {
 
         {role === 'tenant' && (
           <div>
-            <button type="submit" className="btn">Enter household</button>
+            <button type="submit" className="btn" disabled={busy}>
+              {busy ? 'Creating your account…' : 'Enter household'}
+            </button>
           </div>
         )}
       </form>

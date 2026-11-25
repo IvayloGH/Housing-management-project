@@ -1,16 +1,57 @@
-# React + Vite
+# Roomify frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The website of Roomify: tenants share chores, groceries and repairs, property managers
+assign repairs, technicians fix them. Built with React 19, React Router and Vite.
+It talks to the FastAPI backend in `../backend`.
 
-Currently, two official plugins are available:
+## Run it on your laptop
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Start the backend first (see `../DEPLOY.md`), it runs on http://localhost:8000.
+2. Then:
 
-## React Compiler
+       cd Roomify_Web/frontend
+       npm install
+       cp .env.example .env.local     # only needed if the backend runs somewhere else
+       npm run dev
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. Open http://localhost:5173.
 
-## Expanding the ESLint configuration
+Other commands: `npm run lint` (check the code), `npm run build` (the website for Azure, in `dist/`).
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Settings (`.env.local`)
+
+| Name | What it does |
+|---|---|
+| `VITE_API_URL` | Address of the backend. Default `http://localhost:8000`. `.env.production` has the Azure one. |
+| `VITE_FACE_LOGIN` | `true` shows the face login buttons. Keep `false` until face login works in the backend. |
+
+## How the code is organised
+
+    src/
+      main.jsx            starts the app (router + logged-in user)
+      App.jsx             all page addresses; which role may open which page
+      config.js           switches for parts that are not ready yet (face login)
+      api/
+        client.js         the only place that calls the backend (address, token, errors, 401 = log out)
+        roomify.js        one function per backend endpoint
+        auth.js           login, register, logout
+        convert.js        backend words -> page words (urgency, status, ticket shapes)
+        useApi.js         hook: load data when a page opens (data, error, loading, reload)
+        userContext.js    useUser(): who is logged in
+      components/         parts used on several pages (layout, cards, chips, photo, bell ...)
+      pages/              one file per page, named after the role: Tenant..., Manager..., Technician...
+      utils/dates.js      date helpers
+      index.css           all styles
+
+## Logging in
+
+After login the user (from `GET /users/me`) is kept in `UserProvider`.
+`AppLayout` sends people who are not logged in to the login page, and `RequireRole`
+sends a user who opens another role's page (e.g. a tenant on `/manager`) to their own home page.
+When the backend answers 401 (the token expires after 30 minutes), `client.js` logs the user out.
+
+## Not ready yet
+
+- **Forgot password**: the page only explains to ask the property manager; there is no reset in the backend.
+- **Face login**: hidden behind `VITE_FACE_LOGIN`.
+- **Technician working days, hours and cities**: shown, but not saved (no backend column).

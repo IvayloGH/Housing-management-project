@@ -30,13 +30,6 @@ const paths = {
   ),
   chevronLeft: <polyline points="15 5 8 12 15 19" />,
   chevronRight: <polyline points="9 5 16 12 9 19" />,
-  broom: (
-    <>
-      <path d="M19 3 11.5 10.5" />
-      <path d="M9.5 9.5 14.5 14.5 12 21H4.5L3 19.5 9.5 9.5z" />
-      <path d="M7 21l1.5-4" />
-    </>
-  ),
   basket: (
     <>
       <path d="M3 10h18l-2 10H5L3 10z" />
@@ -75,13 +68,6 @@ const paths = {
       <line x1="5" y1="12" x2="19" y2="12" />
     </>
   ),
-  wallet: (
-    <>
-      <path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7z" />
-      <path d="M4 7l11-3v3" />
-      <circle cx="16" cy="13.5" r="1" />
-    </>
-  ),
   user: (
     <>
       <circle cx="12" cy="8" r="4" />
@@ -89,19 +75,6 @@ const paths = {
     </>
   ),
   message: <path d="M4 5h16v11H9l-5 4V5z" />,
-  lock: (
-    <>
-      <rect x="5" y="11" width="14" height="10" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-    </>
-  ),
-  logout: (
-    <>
-      <path d="M10 4H5v16h5" />
-      <polyline points="15 8 19 12 15 16" />
-      <line x1="19" y1="12" x2="9" y2="12" />
-    </>
-  ),
 }
 
 function Icon({ name, size = 16, strokeWidth = 2, className = '' }) {

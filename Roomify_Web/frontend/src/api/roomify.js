@@ -3,7 +3,6 @@
 import { api } from './client.js'
 
 // ---------- Profile ----------
-export const getProfile = () => api('/users/me')
 export const updateProfile = (changes) => api('/users/me', { method: 'PUT', body: changes })
 export const changePassword = (currentPassword, newPassword) =>
   api('/users/me/password', {
@@ -29,11 +28,12 @@ export const addChore = (chore) => api('/chores/assignments', { method: 'POST', 
 export const getGroceries = () => api('/groceries')
 export const addGrocery = (name) => api('/groceries', { method: 'POST', body: { name } })
 export const markBought = (itemId) => api(`/groceries/${itemId}/bought`, { method: 'PUT' })
+export const deleteGrocery = (itemId) => api(`/groceries/${itemId}`, { method: 'DELETE' })
 export const getExpenses = () => api('/expenses')
 // Split between everyone in the house
 export const addExpense = (description, amount) =>
   api('/expenses', { method: 'POST', body: { description, amount } })
-// Only the person who paid can say "paid me back"
+// The person who owes presses PAY: their share is then paid back
 export const settleShare = (expenseId, tenantId) =>
   api(`/expenses/${expenseId}/shares/${tenantId}/settle`, { method: 'PUT' })
 
@@ -59,6 +59,7 @@ export const addHouse = (street, city) => api('/houses', { method: 'POST', body:
 export const editHouse = (houseId, street, city) =>
   api(`/houses/${houseId}`, { method: 'PUT', body: { street, city } })
 export const getTeam = () => api('/houses/team')
+export const getHouseTenants = (houseId) => api(`/houses/${houseId}/tenants`)
 
 // ---------- Notifications ----------
 export const getNotifications = () => api('/notifications')

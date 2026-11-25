@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import StatusDot from '../components/StatusDot.jsx'
 import Icon from '../components/Icon.jsx'
 import { useApi } from '../api/useApi.js'
+import { useUser } from '../api/userContext.js'
 import {
-  addExpense, addGrocery, getExpenses, getGroceries, getProfile, markBought, settleShare,
+  addExpense, addGrocery, deleteGrocery, getExpenses, getGroceries, markBought, settleShare,
 } from '../api/roomify.js'
 import { firstName } from '../api/convert.js'
 
@@ -14,8 +15,8 @@ function euro(amount) {
 }
 
 async function loadGroceries() {
-  const [profile, groceries, expenses] = await Promise.all([getProfile(), getGroceries(), getExpenses()])
-  return { profile, groceries, expenses }
+  const [groceries, expenses] = await Promise.all([getGroceries(), getExpenses()])
+  return { groceries, expenses }
 }
 
 // Who owes whom, from the list of expenses. Only shares that are not paid back yet.
@@ -43,34 +44,58 @@ function balances(expenses, myId) {
 }
 
 function TenantGroceriesPage() {
+  const { user: profile } = useUser()
   const { data, error, reload } = useApi(loadGroceries)
   const [newItem, setNewItem] = useState('')
   // The item you are buying right now, and what it cost
   const [buyingId, setBuyingId] = useState(null)
   const [price, setPrice] = useState('')
   const [actionError, setActionError] = useState('')
+  // The button that is being saved right now (so it can't be clicked twice)
+  const [busy, setBusy] = useState('')
+  // Items whose cost is already saved as an expense, but "bought" failed: don't save the cost twice
+  const costSaved = useRef(new Set())
+  // Debts you just paid with PAY: shown with a tick until the page is opened again
+  const [justPaid, setJustPaid] = useState([])
+
+  // "PAY": there is no real payment in Roomify, it only marks your share as paid back
+  async function pay(debt) {
+    setActionError('')
+    setBusy('pay-' + debt.key)
+    try {
+      await settleShare(debt.expenseId, debt.tenantId)
+      setJustPaid([...justPaid, debt])
+      reload()
+    } catch (err) {
+      setActionError(err.message)
+    }
+    setBusy('')
+  }
 
   // Runs a change on the backend, then loads the page data again
-  async function change(action) {
+  async function change(key, action) {
     setActionError('')
+    setBusy(key)
     try {
       await action()
       reload()
     } catch (err) {
       setActionError(err.message)
     }
+    setBusy('')
   }
 
   function addItem(event) {
     event.preventDefault()
     if (!newItem.trim()) return
-    change(async () => {
+    change('add', async () => {
       await addGrocery(newItem.trim())
       setNewItem('')
     })
   }
 
-  // "I bought it": mark it bought, and if you fill in a price, split it with the house
+  // "I bought it": if you fill in a price, split it with the house first, then mark it bought.
+  // In this order a failed save never hides an item whose cost was not shared.
   function saveBought(event, item) {
     event.preventDefault()
     const amount = Number(price.replace(',', '.'))
@@ -78,22 +103,31 @@ function TenantGroceriesPage() {
       setActionError('Fill in a price like 3,50 or leave it empty.')
       return
     }
-    change(async () => {
+    change('buy-' + item.item_id, async () => {
+      if (amount > 0 && !costSaved.current.has(item.item_id)) {
+        await addExpense(item.name, amount.toFixed(2))
+        costSaved.current.add(item.item_id)
+      }
       await markBought(item.item_id)
-      if (amount > 0) await addExpense(item.name, amount.toFixed(2))
+      costSaved.current.delete(item.item_id)
       setBuyingId(null)
       setPrice('')
     })
   }
 
-  const myId = data ? data.profile.user_id : null
+  const myId = profile.user_id
   const list = data ? data.groceries.filter((g) => !g.is_bought) : []
   const { youOwe, owedToYou } = data ? balances(data.expenses, myId) : { youOwe: [], owedToYou: [] }
+  // Still owed, plus the ones you just paid (after a reload they are no longer in youOwe)
+  const paidKeys = justPaid.map((d) => d.key)
+  // Newest expense first (like the backend's list), so a paid line stays where it was
+  const debtRows = [...youOwe.filter((d) => !paidKeys.includes(d.key)), ...justPaid]
+    .sort((a, b) => b.expenseId - a.expenseId)
 
   return (
     <>
       <PageHeader
-        eyebrow={`Tenant · Shared groceries${data ? ' · ' + data.profile.house_name : ''}`}
+        eyebrow={`Tenant · Shared groceries${profile.house_name ? ' · ' + profile.house_name : ''}`}
         title="Shared groceries, fair shares."
         titleMuted="Add what it cost and it's split between everyone."
       />
@@ -105,27 +139,37 @@ function TenantGroceriesPage() {
         <div className="grid-2">
           <section className="card">
             <h2>You owe</h2>
-            {data && youOwe.length === 0 && <p className="saved"><Icon name="check" /> You don't owe anyone</p>}
-            {youOwe.map((d) => (
-              <div className="list-row" key={d.key}>
-                <p className="row-text">
-                  You owe <strong>{d.person} {euro(d.amount)}</strong> for {d.reason}
-                </p>
-              </div>
-            ))}
+            {data && debtRows.length === 0 && <p className="saved"><Icon name="check" /> You don't owe anyone</p>}
+            {debtRows.map((d) =>
+              paidKeys.includes(d.key) ? (
+                <div className="list-row" key={d.key}>
+                  <p className="row-text">
+                    You paid <strong>{d.person} {euro(d.amount)}</strong> for {d.reason}
+                  </p>
+                  <span className="saved"><Icon name="check" /> Paid</span>
+                </div>
+              ) : (
+                <div className="list-row" key={d.key}>
+                  <p className="row-text">
+                    You owe <strong>{d.person} {euro(d.amount)}</strong> for {d.reason}
+                  </p>
+                  <button className="btn btn-small" disabled={busy !== ''} onClick={() => pay(d)}>
+                    {busy === 'pay-' + d.key ? 'Paying…' : 'PAY'}
+                  </button>
+                </div>
+              ),
+            )}
           </section>
 
           <section className="card">
             <h2>Owed to you</h2>
+            {/* Gone from this list by itself when they press PAY on their side */}
             {data && owedToYou.length === 0 && <p className="row-sub">Nobody owes you money.</p>}
             {owedToYou.map((c) => (
               <div className="list-row" key={c.key}>
                 <p className="row-text">
                   <strong>{c.person}</strong> owes you <strong>{euro(c.amount)}</strong> for {c.reason}
                 </p>
-                <button className="btn btn-small" onClick={() => change(() => settleShare(c.expenseId, c.tenantId))}>
-                  Paid me back
-                </button>
               </div>
             ))}
           </section>
@@ -155,15 +199,31 @@ function TenantGroceriesPage() {
                     onChange={(e) => setPrice(e.target.value)}
                     autoFocus
                   />
-                  <button type="submit" className="btn btn-small">Save</button>
+                  <button type="submit" className="btn btn-small" disabled={busy !== ''}>
+                    {busy === 'buy-' + item.item_id ? 'Saving…' : 'Save'}
+                  </button>
                   <button type="button" className="link-button" onClick={() => setBuyingId(null)}>Cancel</button>
                 </form>
               ) : (
                 <div className="row-right">
                   <StatusDot color="orange">To buy</StatusDot>
-                  <button className="btn btn-small" onClick={() => { setBuyingId(item.item_id); setPrice('') }}>
-                    I bought it
-                  </button>
+                  <span className="row-actions">
+                    <button
+                      className="btn btn-small"
+                      disabled={busy !== ''}
+                      onClick={() => { setBuyingId(item.item_id); setPrice('') }}
+                    >
+                      I bought it
+                    </button>
+                    <button
+                      className="link-button"
+                      disabled={busy !== ''}
+                      aria-label={'Remove ' + item.name + ' from the list'}
+                      onClick={() => change('remove-' + item.item_id, () => deleteGrocery(item.item_id))}
+                    >
+                      {busy === 'remove-' + item.item_id ? 'Removing…' : 'Remove'}
+                    </button>
+                  </span>
                 </div>
               )}
             </div>
@@ -172,10 +232,13 @@ function TenantGroceriesPage() {
           <form className="add-row" onSubmit={addItem}>
             <input
               placeholder="Add an item…"
+              aria-label="Add an item to the shopping list"
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
             />
-            <button type="submit" className="btn btn-small">Add</button>
+            <button type="submit" className="btn btn-small" disabled={busy !== ''}>
+              {busy === 'add' ? 'Adding…' : 'Add'}
+            </button>
           </form>
         </section>
       </div>

@@ -7,22 +7,33 @@ import { useApi } from '../api/useApi.js'
 import { getHouses, getManagerTickets } from '../api/roomify.js'
 import { toReport } from '../api/convert.js'
 
+const ALL_HOUSES = 'all'
+
 async function loadOverview() {
   const [tickets, houses] = await Promise.all([getManagerTickets(), getHouses()])
   return { reports: tickets.map((t) => toReport(t)), houses }
 }
 
+// The text in the Status column
+function statusText(report) {
+  if (report.status === 'waiting') return 'Waiting'
+  if (report.status === 'fixed') return 'Fixed' + (report.technician ? ' by ' + report.technician : '')
+  return (report.technician || 'Technician') + ' · in progress'
+}
+
 function ManagerPage() {
   const { data, error } = useApi(loadOverview)
-  const [house, setHouse] = useState('All houses')
+  // The chosen house: its house_id, or 'all'. (Two houses can have the same street name,
+  // so we filter on the id, not on the name.)
+  const [house, setHouse] = useState(ALL_HOUSES)
+  const [showFixed, setShowFixed] = useState(false)
 
   const reports = data ? data.reports : []
   const houses = data ? data.houses : []
 
-  // Only open reports, filtered on the chosen house
-  const openReports = reports.filter(
-    (r) => r.status !== 'fixed' && (house === 'All houses' || r.house === house)
-  )
+  const inHouse = reports.filter((r) => house === ALL_HOUSES || r.houseId === house)
+  const openReports = inHouse.filter((r) => r.status !== 'fixed')
+  const shownReports = showFixed ? inHouse : openReports
   const urgent = openReports.filter((r) => r.urgency === 'Urgent').length
   const waiting = openReports.filter((r) => r.status === 'waiting').length
   const inProgress = openReports.filter((r) => r.status === 'inProgress').length
@@ -35,7 +46,10 @@ function ManagerPage() {
         titleMuted="Newest reports at the top."
         side={
           <ChipGroup
-            options={['All houses', ...houses.map((h) => h.name)]}
+            options={[
+              { value: ALL_HOUSES, label: 'All houses' },
+              ...houses.map((h) => ({ value: h.house_id, label: h.address })),
+            ]}
             value={house}
             onChange={setHouse}
           />
@@ -52,8 +66,16 @@ function ManagerPage() {
         </div>
 
         <section className="card">
-          <h2>All reports</h2>
-          {data && openReports.length === 0 && <p className="row-sub">No open reports. Everything is fixed.</p>}
+          <div className="card-head">
+            <h2>{showFixed ? 'All reports' : 'Open reports'}</h2>
+            <label className="check-label">
+              <input type="checkbox" checked={showFixed} onChange={(e) => setShowFixed(e.target.checked)} />
+              Show fixed reports
+            </label>
+          </div>
+          {data && shownReports.length === 0 && (
+            <p className="row-sub">{showFixed ? 'No reports yet.' : 'No open reports. Everything is fixed.'}</p>
+          )}
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -67,7 +89,7 @@ function ManagerPage() {
                 </tr>
               </thead>
               <tbody>
-                {openReports.map((r) => (
+                {shownReports.map((r) => (
                   <tr key={r.id}>
                     <td><span className={'urgency urgency-' + r.urgency.toLowerCase()}>{r.urgency}</span></td>
                     <td>
@@ -76,7 +98,7 @@ function ManagerPage() {
                     </td>
                     <td>{r.house} · {r.room}</td>
                     <td className="muted">{r.posted} · {r.reportedBy}</td>
-                    <td>{r.status === 'waiting' ? 'Waiting' : `${r.technician} · in progress`}</td>
+                    <td>{statusText(r)}</td>
                     <td className="right">
                       <Link
                         to={'/manager/review?report=' + r.id}

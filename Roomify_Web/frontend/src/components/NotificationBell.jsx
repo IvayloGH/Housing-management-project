@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useApi } from '../api/useApi.js'
 import { getNotifications, markNotificationRead } from '../api/roomify.js'
-import { dayText } from '../api/convert.js'
+import { dayText } from '../utils/dates.js'
 
 // Where a notification takes you, per role
 const homePage = { tenant: '/tenant/report', manager: '/manager', technician: '/technician' }
+
+// Look for new notifications this often (1 minute)
+const REFRESH_EVERY = 60 * 1000
 
 // The bell in the top bar. The red number shows how many notifications are unread.
 // Click the bell to open the list, click a notification to go to its page.
@@ -16,6 +19,27 @@ function NotificationBell({ role }) {
 
   const items = data || []
   const unreadCount = items.filter((n) => !n.is_read).length
+
+  // New notifications appear without refreshing the page
+  useEffect(() => {
+    const timer = setInterval(reload, REFRESH_EVERY)
+    return () => clearInterval(timer)
+  }, [reload])
+
+  // Escape closes the list
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  function toggle() {
+    if (!open) reload() // show the newest list when it opens
+    setOpen(!open)
+  }
 
   async function openNotification(notification) {
     setOpen(false)
@@ -28,7 +52,7 @@ function NotificationBell({ role }) {
 
   return (
     <div className="notifications">
-      <button className="bell" onClick={() => setOpen(!open)} aria-label="Notifications">
+      <button className="bell" onClick={toggle} aria-label="Notifications" aria-expanded={open}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
           <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16z" strokeLinejoin="round" />
           <path d="M10 20.5a2 2 0 0 0 4 0" strokeLinecap="round" />

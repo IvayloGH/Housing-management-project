@@ -1,10 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Icon from './Icon.jsx'
 
-// Shows a photo of the problem. Click it to see it big; click again to close.
+// Shows a photo of the problem. Click it to see it big; click again (or press Escape) to close.
 // size: 'large' (manager review) or 'small' (in lists)
 function PhotoView({ src, alt, size = 'large' }) {
   const [big, setBig] = useState(false)
+
+  // Escape closes the big photo
+  useEffect(() => {
+    if (!big) return
+    const onKey = (event) => {
+      if (event.key === 'Escape') setBig(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [big])
 
   // No photo: show a grey box with a camera icon
   if (!src) {
@@ -27,7 +37,7 @@ function PhotoView({ src, alt, size = 'large' }) {
       {big && (
         <div className="photo-overlay" onClick={() => setBig(false)}>
           <img src={src} alt={alt} />
-          <button type="button" className="photo-close" aria-label="Close the photo">
+          <button type="button" className="photo-close" aria-label="Close the photo" autoFocus>
             <Icon name="cross" size={22} />
           </button>
         </div>

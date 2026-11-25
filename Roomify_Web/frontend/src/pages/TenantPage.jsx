@@ -2,49 +2,40 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import PageHeader from '../components/PageHeader.jsx'
 import StatusDot from '../components/StatusDot.jsx'
+import ReportStatus from '../components/ReportStatus.jsx'
 import Icon from '../components/Icon.jsx'
 import tenantPhoto from '../assets/photos/tenant-home.jpg'
 import { useApi } from '../api/useApi.js'
-import { getHouseTickets, getMyChores, getGroceries, getProfile, markBought, markChoreDone } from '../api/roomify.js'
-import { fromDateText, toReport } from '../api/convert.js'
-
-const reportStatus = {
-  waiting: { color: 'orange', label: 'Waiting for the manager' },
-  inProgress: { color: 'green', label: 'In progress' },
-  fixed: { color: 'grey', label: 'Fixed' },
-}
+import { useUser } from '../api/userContext.js'
+import { getHouseTickets, getMyChores, getGroceries, markBought, markChoreDone } from '../api/roomify.js'
+import { toReport } from '../api/convert.js'
+import { fromDateText } from '../utils/dates.js'
 
 // Everything the home page needs, loaded at the same time
 async function loadHome() {
-  const [profile, chores, groceries, tickets] = await Promise.all([
-    getProfile(), getMyChores(3), getGroceries(), getHouseTickets(),
-  ])
-  return { profile, chores, groceries, tickets }
+  const [chores, groceries, tickets] = await Promise.all([getMyChores(3), getGroceries(), getHouseTickets()])
+  return { chores, groceries, tickets }
 }
 
 function TenantPage() {
+  const { user: profile } = useUser()
   const { data, error, reload } = useApi(loadHome)
   const [actionError, setActionError] = useState('')
+  // The button that is being saved right now, e.g. 'chore-12' (so it can't be clicked twice)
+  const [busy, setBusy] = useState('')
 
-  async function markDone(id) {
+  async function run(key, action) {
+    setActionError('')
+    setBusy(key)
     try {
-      await markChoreDone(id)
+      await action()
       reload()
     } catch (err) {
       setActionError(err.message)
     }
+    setBusy('')
   }
 
-  async function bought(id) {
-    try {
-      await markBought(id)
-      reload()
-    } catch (err) {
-      setActionError(err.message)
-    }
-  }
-
-  const profile = data ? data.profile : null
   const chores = data ? data.chores : []
   const items = data ? data.groceries.filter((g) => !g.is_bought).slice(0, 4) : []
   const myReports = data
@@ -54,7 +45,7 @@ function TenantPage() {
   return (
     <>
       <PageHeader
-        eyebrow={profile ? `Tenant · ${profile.house_name} · Room ${profile.room_number || '-'}` : 'Tenant'}
+        eyebrow={`Tenant · ${profile.house_name || ''} · Room ${profile.room_number || '-'}`}
         title="Your house today."
         titleMuted="Chores, groceries and repairs in one place."
         image={tenantPhoto}
@@ -85,12 +76,16 @@ function TenantPage() {
                     </div>
                     <div>
                       <strong>{chore.chore_title}</strong>
-                      <p className="row-sub">{chore.area || (chore.status === 'MISSED' ? 'Not done yet' : '')}</p>
+                      <p className="row-sub">{chore.status === 'MISSED' ? 'Not done yet' : chore.area || ''}</p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <button className="btn btn-small" onClick={() => markDone(chore.assignment_id)}>
-                      Mark as done
+                    <button
+                      className="btn btn-small"
+                      disabled={busy !== ''}
+                      onClick={() => run('chore-' + chore.assignment_id, () => markChoreDone(chore.assignment_id))}
+                    >
+                      {busy === 'chore-' + chore.assignment_id ? 'Saving…' : 'Mark as done'}
                     </button>
                   )}
                 </div>
@@ -112,8 +107,12 @@ function TenantPage() {
                 <div className="row-right">
                   <StatusDot color="orange">To buy</StatusDot>
                   <span className="button-space">
-                    <button className="btn btn-small" onClick={() => bought(item.item_id)}>
-                      I bought it
+                    <button
+                      className="btn btn-small"
+                      disabled={busy !== ''}
+                      onClick={() => run('item-' + item.item_id, () => markBought(item.item_id))}
+                    >
+                      {busy === 'item-' + item.item_id ? 'Saving…' : 'I bought it'}
                     </button>
                   </span>
                 </div>
@@ -135,9 +134,7 @@ function TenantPage() {
                 <strong>{report.title}</strong>
                 <p className="row-sub">{report.room} · reported {report.posted.toLowerCase()}</p>
               </div>
-              <StatusDot color={reportStatus[report.status].color}>
-                {reportStatus[report.status].label}
-              </StatusDot>
+              <ReportStatus report={report} />
             </div>
           ))}
         </section>

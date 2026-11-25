@@ -1,12 +1,11 @@
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { NavLink, Navigate, Outlet, useLocation } from 'react-router'
 import Logo from './Logo.jsx'
 import NotificationBell from './NotificationBell.jsx'
-import { logout } from '../api/auth.js'
 import Icon from './Icon.jsx'
+import { useUser } from '../api/userContext.js'
 
 // Menu items per role, from the Figma design.
-// For now the role comes from the URL (/tenant, /manager, /technician).
-// In step 2 it will come from the logged-in user instead.
+// The role comes from the logged-in user (api/userContext.js).
 // "short" and "icon" are used in the bottom tab bar on phones.
 const menus = {
   tenant: [
@@ -31,14 +30,37 @@ const menus = {
 
 function AppLayout() {
   const location = useLocation()
-  const navigate = useNavigate()
-  const role = location.pathname.split('/')[1]
-  const menu = menus[role] || []
+  const { user, checking, error, reloadUser, signOut } = useUser()
+
+  // Still asking the backend who is logged in
+  if (checking) {
+    return <p className="row-sub page-message">Loading…</p>
+  }
+
+  // The backend could not be reached (e.g. the database is waking up)
+  if (error) {
+    return (
+      <div className="page-message">
+        <p className="error">{error}</p>
+        <div className="button-row">
+          <button className="btn" onClick={reloadUser}>Try again</button>
+          <button className="link-button" onClick={signOut}>Log out</button>
+        </div>
+      </div>
+    )
+  }
+
+  // Nobody is logged in (or the session ended): go to the login page
+  if (!user) {
+    return <Navigate to="/" replace />
+  }
+
+  const menu = menus[user.role] || []
 
   return (
     <div className="app-layout">
       <header className="app-header">
-        <Logo to={'/' + role} />
+        <Logo to={'/' + user.role} />
 
         <nav className="app-nav">
           {menu.map((item) => (
@@ -50,10 +72,9 @@ function AppLayout() {
           ))}
         </nav>
 
-        {/* key={role}: a new list of notifications when the role changes */}
-        <NotificationBell key={role} role={role} />
+        <NotificationBell role={user.role} />
 
-        <button className="logout" onClick={() => { logout(); navigate('/') }}>
+        <button className="logout" onClick={signOut}>
           Log out
         </button>
       </header>
