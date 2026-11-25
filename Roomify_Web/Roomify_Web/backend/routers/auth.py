@@ -52,11 +52,6 @@ def find_house(db: Session, street: str, city: str) -> House:
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     """Create an account and log in straight away. Tenants join their house by its address."""
-    # Security: public registration cannot grant privileged roles.
-    # Managers and technicians must be provisioned by a trusted administrator.
-    if data.role != "tenant":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only tenant self-registration is available")
-
     password_errors = validate_password(data.password)
     if password_errors:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, password_errors)
