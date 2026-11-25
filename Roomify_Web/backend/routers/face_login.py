@@ -10,10 +10,12 @@ While one of them can't run (not installed / not written yet), every face endpoi
 Face only (no email): the camera photo is compared with the saved face of every user who
 turned face login on. It only logs you in when exactly one person matches.
 """
+from contextlib import contextmanager
 from typing import Callable, TypeVar
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 import face_crypto  # Eszter's
@@ -41,6 +43,16 @@ def ready(step: Callable[..., T], *args) -> T:
     try:
         return step(*args)
     except NotImplementedError:
+        raise not_available()
+
+
+@contextmanager
+def face_table(db: Session):
+    """The face_login table is new. Until Razvan creates it in Azure SQL, answer 503 instead of crashing."""
+    try:
+        yield
+    except DBAPIError:
+        db.rollback()
         raise not_available()
 
 
@@ -91,7 +103,8 @@ def matching_users(db: Session, template: list[float], skip_user_id: int | None 
 @router.get("", response_model=FaceStatus)
 def face_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Profile page: is face login on for me?"""
-    return FaceStatus(is_set_up=db.get(FaceLogin, user.user_id) is not None)
+    with face_table(db):
+        return FaceStatus(is_set_up=db.get(FaceLogin, user.user_id) is not None)
 
 
 @router.post("/setup", status_code=status.HTTP_204_NO_CONTENT)
@@ -107,26 +120,28 @@ def set_up_face(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Please agree to storing your face template first")
     template = face_from_photo(read_photo(file))
 
-    # Face-only login must always point to one person
-    if matching_users(db, template, skip_user_id=user.user_id):
-        raise HTTPException(status.HTTP_409_CONFLICT, "This face is already used for face login on another account")
+    with face_table(db):
+        # Face-only login must always point to one person
+        if matching_users(db, template, skip_user_id=user.user_id):
+            raise HTTPException(status.HTTP_409_CONFLICT, "This face is already used for face login on another account")
 
-    encrypted = ready(face_crypto.encrypt_template, template)
-    row = db.get(FaceLogin, user.user_id)
-    if row is None:
-        db.add(FaceLogin(user_id=user.user_id, template=encrypted))
-    else:
-        row.template = encrypted
-    db.commit()
+        encrypted = ready(face_crypto.encrypt_template, template)
+        row = db.get(FaceLogin, user.user_id)
+        if row is None:
+            db.add(FaceLogin(user_id=user.user_id, template=encrypted))
+        else:
+            row.template = encrypted
+        db.commit()
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 def turn_off_face(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Turn face login off: my face template is deleted."""
-    row = db.get(FaceLogin, user.user_id)
-    if row is not None:
-        db.delete(row)
-        db.commit()
+    with face_table(db):
+        row = db.get(FaceLogin, user.user_id)
+        if row is not None:
+            db.delete(row)
+            db.commit()
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -137,7 +152,8 @@ def face_login(request: Request, file: UploadFile = File(...), db: Session = Dep
     check_login_limit(identifier)
 
     template = face_from_photo(read_photo(file))
-    matches = matching_users(db, template)
+    with face_table(db):
+        matches = matching_users(db, template)
     if len(matches) != 1:  # nobody, or more than one person: never guess
         register_login_failure(identifier)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "We didn't recognise your face. Try again or use your password.")

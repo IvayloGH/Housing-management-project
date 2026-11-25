@@ -9,7 +9,7 @@ from database import get_db
 from deps import get_my_house_id
 from models import Chore, ChoreAssignment, House, Tenant, User
 from schemas import ChoreAdd, ChorePlanResult, ScheduleEntry
-from services.chore_service import plan_month, take_turns
+from services.chore_service import PLAN_AHEAD, REPEAT_DAYS, next_turns, plan_month, take_turns
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/chores", tags=["Chores"])
@@ -98,6 +98,7 @@ def mark_done(assignment_id: int, db: Session = Depends(get_db), user: User = De
 
     assignment.is_done = True
     assignment.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    keep_repeats_planned(db, get_my_house_id(db, user))  # repeating chores never run out
     db.commit()
     db.refresh(assignment)
     return to_entry(assignment, db.get(Chore, assignment.chore_id), user, user)
@@ -154,13 +155,34 @@ def plan_house_month(
 
 
 # How a repeat choice on the 'Add a chore' form is saved as the chore's frequency
+# ('ONCE' is saved as MONTHLY because the database only allows DAILY/WEEKLY/BIWEEKLY/MONTHLY)
 REPEAT_TO_FREQUENCY = {"ONCE": "MONTHLY", "WEEKLY": "WEEKLY", "BIWEEKLY": "BIWEEKLY"}
-REPEAT_STEP_DAYS = {"ONCE": None, "WEEKLY": 7, "BIWEEKLY": 14}
+
+
+def keep_repeats_planned(db: Session, house_id: int) -> None:
+    """Make sure every repeating chore of the house is planned PLAN_AHEAD (12 weeks) from today.
+    Each new turn goes to the next housemate after the last planned one. Does not commit."""
+    until = date.today() + PLAN_AHEAD
+    housemates = list(db.scalars(select(Tenant.user_id).where(Tenant.house_id == house_id)).all())
+    chores = db.scalars(
+        select(Chore).where(Chore.house_id == house_id, Chore.frequency.in_(list(REPEAT_DAYS)))
+    ).all()
+    for chore in chores:
+        last = db.scalar(
+            select(ChoreAssignment)
+            .where(ChoreAssignment.chore_id == chore.chore_id)
+            .order_by(ChoreAssignment.due_date.desc())
+            .limit(1)
+        )
+        if last is None:
+            continue
+        for day, who in next_turns(last.due_date, last.tenant_id, REPEAT_DAYS[chore.frequency], housemates, until):
+            db.add(ChoreAssignment(chore_id=chore.chore_id, tenant_id=who, due_date=day))
 
 
 @router.post("/assignments", response_model=list[ScheduleEntry], status_code=status.HTTP_201_CREATED)
 def add_chore(data: ChoreAdd, db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
-    """'Add a chore': on a day, and maybe every 1 or 2 weeks until the end of that month.
+    """'Add a chore': once, or every 1 or 2 weeks (planned 12 weeks ahead and kept topped up).
     The chosen person does the first turn; every repeat goes to the next housemate (rotation, M-07)."""
     house_id = get_my_house_id(db, user)
     tenant = db.get(Tenant, data.tenant_id)
@@ -176,11 +198,13 @@ def add_chore(data: ChoreAdd, db: Session = Depends(get_db), user: User = Depend
         chore = Chore(house_id=house_id, title=title, frequency=REPEAT_TO_FREQUENCY[data.repeat])
         db.add(chore)
         db.flush()
+    elif data.repeat in REPEAT_DAYS:
+        chore.frequency = data.repeat  # an existing chore now repeats this often
 
-    # Which days: the first day, then every 7 or 14 days in the same month
+    # Which days: the first day, then every 7 or 14 days for the next 12 weeks
     days = [data.first_date]
-    step = REPEAT_STEP_DAYS[data.repeat]
-    while step and (days[-1] + timedelta(days=step)).month == data.first_date.month:
+    step = REPEAT_DAYS.get(data.repeat)
+    while step and days[-1] + timedelta(days=step) <= data.first_date + PLAN_AHEAD:
         days.append(days[-1] + timedelta(days=step))
 
     # Rotation: the chosen person does the first day, then the next housemate each time

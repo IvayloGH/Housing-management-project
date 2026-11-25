@@ -1,5 +1,5 @@
 """API tests: real requests to the FastAPI app, against a SQLite test database (see conftest.py)."""
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -148,7 +148,7 @@ def test_photo_upload(client, tmp_path):
 
 # ---------- chores ----------
 
-def test_add_weekly_chore_until_end_of_month(client):
+def test_add_weekly_chore_for_the_next_12_weeks(client):
     start = first_of_next_month()
     response = client.post("/chores/assignments", headers=as_user(TOM), json={
         "title": "Clean the oven", "tenant_id": ANA, "first_date": start.isoformat(), "repeat": "WEEKLY",
@@ -157,15 +157,16 @@ def test_add_weekly_chore_until_end_of_month(client):
     days = [date.fromisoformat(e["due_date"]) for e in response.json()]
     assert days[0] == start
     assert all((b - a).days == 7 for a, b in zip(days, days[1:]))
-    assert all(d.month == start.month for d in days) and len(days) >= 4
+    assert len(days) == 13 and (days[-1] - start).days == 84   # first day + 12 weeks, also into next months
 
     # rotation (M-07): Ana starts, then it goes round the house (Tom, Ana, Tom, ...)
     doers = [e["tenant_id"] for e in response.json()]
     assert doers == [[ANA, TOM][i % 2] for i in range(len(days))]
 
     schedule = client.get(f"/chores/schedule?year={start.year}&month={start.month}", headers=as_user(ANA)).json()
-    assert len(schedule) == len(days)
-    assert [e["is_mine"] for e in schedule] == [d == ANA for d in doers]
+    in_month = [d for d in doers[:len(schedule)]]
+    assert len(schedule) == sum(1 for d in days if d.month == start.month)
+    assert [e["is_mine"] for e in schedule] == [d == ANA for d in in_month]
 
     # same chore on the same day again: refused
     again = client.post("/chores/assignments", headers=as_user(TOM), json={
@@ -181,6 +182,22 @@ def test_once_chore_stays_with_the_chosen_person(client):
     })
     assert response.status_code == 201
     assert [e["tenant_id"] for e in response.json()] == [ANA]
+
+
+def test_marking_done_keeps_the_plan_without_doubles(client):
+    today = date.today()
+    added = client.post("/chores/assignments", headers=as_user(TOM), json={
+        "title": "Bins", "tenant_id": TOM, "first_date": today.isoformat(), "repeat": "WEEKLY",
+    }).json()
+    assert len(added) == 13
+    # Tom does today's turn; the plan is topped up so it still reaches 12 weeks from today
+    done = client.put(f"/chores/assignments/{added[0]['assignment_id']}/done", headers=as_user(TOM))
+    assert done.status_code == 200
+    mine_and_ana = client.get("/chores/mine?limit=50", headers=as_user(TOM)).json() + \
+        client.get("/chores/mine?limit=50", headers=as_user(ANA)).json()
+    bins = sorted(date.fromisoformat(e["due_date"]) for e in mine_and_ana if e["chore_title"] == "Bins")
+    assert bins[-1] == today + timedelta(weeks=12)
+    assert len(bins) == len(set(bins)) == 12   # nothing planned twice
 
 
 def test_chore_rules(client):
@@ -241,3 +258,38 @@ def test_grocery_bought_and_split_cost(client):
 
     settled = client.put(f"/expenses/{expense['expense_id']}/shares/{ANA}/settle", headers=as_user(TOM))
     assert settled.status_code == 200
+
+
+# ---------- face login while the face_login table is not in Azure SQL yet ----------
+
+def test_face_status_without_face_table_says_not_available(client):
+    from sqlalchemy.exc import ProgrammingError
+
+    from database import get_db
+    from main import app
+
+    real_db = app.dependency_overrides[get_db]
+
+    def db_without_face_table():
+        for db in real_db():
+            real_get = db.get
+
+            def get(model, key, *args, **kwargs):
+                if model.__name__ == "FaceLogin":
+                    raise ProgrammingError("SELECT", {}, Exception("Invalid object name 'face_login'"))
+                return real_get(model, key, *args, **kwargs)
+
+            db.get = get
+            yield db
+
+    app.dependency_overrides[get_db] = db_without_face_table
+    try:
+        response = client.get("/auth/face", headers=as_user(TOM))
+    finally:
+        app.dependency_overrides[get_db] = real_db
+    assert response.status_code == 503
+
+
+def test_health_db(client):
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health/db").json() == {"database": "ok"}
