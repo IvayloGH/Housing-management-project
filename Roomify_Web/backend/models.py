@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import ForeignKey, LargeBinary, Numeric, String, Text, func
+from sqlalchemy import ForeignKey, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -135,18 +135,4 @@ class Notification(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"))
     message: Mapped[str] = mapped_column(String(255))
     is_read: Mapped[bool] = mapped_column(server_default="0")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.sysutcdatetime())
-
-
-# NEW TABLE - Razvan still has to add it to the database:
-#   CREATE TABLE [face_login] (
-#       [user_id]    INT            NOT NULL PRIMARY KEY REFERENCES [users]([user_id]),
-#       [template]   VARBINARY(MAX) NOT NULL,  -- encrypted face template, never a photo
-#       [created_at] DATETIME2      NOT NULL DEFAULT SYSUTCDATETIME()
-#   );
-class FaceLogin(Base):
-    __tablename__ = "face_login"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
-    template: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(server_default=func.sysutcdatetime())
