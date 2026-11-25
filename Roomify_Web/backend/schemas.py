@@ -27,10 +27,6 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-class FaceStatus(BaseModel):
-    is_set_up: bool
-
-
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

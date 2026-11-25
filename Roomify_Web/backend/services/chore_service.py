@@ -71,20 +71,6 @@ def plan_month(year: int, month: int, chores: list[tuple[int, str]], tenant_ids:
     return plan
 
 
-def take_turns(tenant_ids: list[int], first: int, turns: int) -> list[int]:
-    """Who does each turn of a repeating chore.
-
-    `first` does turn 1, then the next tenant each time, round and round.
-    The order is always the same (sorted by user_id), so nobody is skipped.
-    Example: tenants [11, 12, 13], first 12, 4 turns -> [12, 13, 11, 12]
-    """
-    tenants = sorted(tenant_ids)
-    if first not in tenants:
-        raise ValueError(f"Tenant {first} is not in this house")
-    start = tenants.index(first)
-    return [tenants[(start + turn) % len(tenants)] for turn in range(turns)]
-
-
 if __name__ == "__main__":
     # quick demo: python -m services.chore_service
     names = {11: "Anna", 12: "Ben", 13: "Chloe"}

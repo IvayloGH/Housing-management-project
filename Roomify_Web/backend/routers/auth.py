@@ -1,33 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import House, PropertyManager, Technician, Tenant, User
 from schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
-from security import create_access_token, get_current_user, hash_password, verify_password
-from password_policy import validate_password
-from login_limit import check_login_limit, register_login_failure, clear_login_failures
+from security import create_access_token, get_current_user, hash_password, verify_password  # Eszter's file
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(data: LoginRequest, db: Session = Depends(get_db)):
     """Sign in button: check email + password, return a token."""
-    # IP + email throttle; IP is taken from the connection, never a user-supplied header.
-    identifier = f"{request.client.host if request.client else 'unknown'}:{data.email.lower()}"
-    check_login_limit(identifier)
     user = db.scalar(select(User).where(User.email == data.email))
 
     if user is None or not verify_password(data.password, user.password_hash):
-        register_login_failure(identifier)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
-    clear_login_failures(identifier)
     return TokenResponse(access_token=create_access_token(user))
 
 
@@ -52,15 +45,6 @@ def find_house(db: Session, street: str, city: str) -> House:
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     """Create an account and log in straight away. Tenants join their house by its address."""
-    # Security: public registration cannot grant privileged roles.
-    # Managers and technicians must be provisioned by a trusted administrator.
-    if data.role != "tenant":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only tenant self-registration is available")
-
-    password_errors = validate_password(data.password)
-    if password_errors:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, password_errors)
-
     if db.scalar(select(User).where(User.email == data.email)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "There is already an account with this email")
 

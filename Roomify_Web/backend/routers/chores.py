@@ -9,7 +9,7 @@ from database import get_db
 from deps import get_my_house_id
 from models import Chore, ChoreAssignment, House, Tenant, User
 from schemas import ChoreAdd, ChorePlanResult, ScheduleEntry
-from services.chore_service import plan_month, take_turns
+from services.chore_service import plan_month
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/chores", tags=["Chores"])
@@ -160,8 +160,8 @@ REPEAT_STEP_DAYS = {"ONCE": None, "WEEKLY": 7, "BIWEEKLY": 14}
 
 @router.post("/assignments", response_model=list[ScheduleEntry], status_code=status.HTTP_201_CREATED)
 def add_chore(data: ChoreAdd, db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
-    """'Add a chore': on a day, and maybe every 1 or 2 weeks until the end of that month.
-    The chosen person does the first turn; every repeat goes to the next housemate (rotation, M-07)."""
+    """'Add a chore': someone in my house does it on a day, and maybe every 1 or 2 weeks
+    until the end of that month."""
     house_id = get_my_house_id(db, user)
     tenant = db.get(Tenant, data.tenant_id)
     if tenant is None or tenant.house_id != house_id:
@@ -183,21 +183,18 @@ def add_chore(data: ChoreAdd, db: Session = Depends(get_db), user: User = Depend
     while step and (days[-1] + timedelta(days=step)).month == data.first_date.month:
         days.append(days[-1] + timedelta(days=step))
 
-    # Rotation: the chosen person does the first day, then the next housemate each time
-    housemates = db.scalars(select(Tenant.user_id).where(Tenant.house_id == house_id)).all()
-    doers = take_turns(list(housemates), data.tenant_id, len(days))
-
     already = set(db.scalars(
         select(ChoreAssignment.due_date)
         .where(ChoreAssignment.chore_id == chore.chore_id, ChoreAssignment.due_date.in_(days))
     ).all())
     new_rows = [
-        ChoreAssignment(chore_id=chore.chore_id, tenant_id=who, due_date=d)
-        for d, who in zip(days, doers) if d not in already
+        ChoreAssignment(chore_id=chore.chore_id, tenant_id=data.tenant_id, due_date=d)
+        for d in days if d not in already
     ]
     if not new_rows:
         raise HTTPException(status.HTTP_409_CONFLICT, "This chore is already planned on that day")
     db.add_all(new_rows)
     db.commit()
 
-    return [to_entry(a, chore, db.get(User, a.tenant_id), user) for a in new_rows]
+    doer = db.get(User, data.tenant_id)
+    return [to_entry(a, chore, doer, user) for a in new_rows]

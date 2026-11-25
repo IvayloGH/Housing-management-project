@@ -1,8 +1,6 @@
 """API tests: real requests to the FastAPI app, against a SQLite test database (see conftest.py)."""
 from datetime import date
 
-import pytest
-
 from conftest import ANA, MANAGER, OTHER_MANAGER, TECH, TOM, ZED, as_user
 
 
@@ -36,20 +34,20 @@ def test_register_with_unknown_address_is_refused(client):
 
 
 def test_register_needs_unique_email_and_long_password(client):
-    home = {"role": "tenant", "street": "Kerkstraat 12", "city": "Eindhoven"}
-    taken = {"name": "X", "email": "user2@test.nl", "password": "longenough"} | home
+    taken = {"name": "X", "email": "user2@test.nl", "password": "longenough", "role": "technician"}
     assert client.post("/auth/register", json=taken).status_code == 409
-    short = {"name": "X", "email": "x@test.nl", "password": "short"} | home
+    short = {"name": "X", "email": "x@test.nl", "password": "short", "role": "technician"}
     assert client.post("/auth/register", json=short).status_code == 422
 
 
-@pytest.mark.parametrize("role", ["technician", "property_manager"])
-def test_only_tenants_can_sign_up_themselves(client, role):
-    # Security rule: managers and technicians are made with create_account.py
+def test_register_technician(client):
     response = client.post("/auth/register", json={
-        "name": "Fixer", "email": "fix@test.nl", "password": "longenough", "role": role,
+        "name": "Fixer", "email": "fix@test.nl", "password": "longenough",
+        "role": "technician", "specialty": "Electrical",
     })
-    assert response.status_code == 403
+    assert response.status_code == 201
+    team = client.get("/houses/team", headers=as_user(MANAGER)).json()
+    assert {"name": "Fixer", "specialty": "Electrical"}.items() <= next(t for t in team if t["name"] == "Fixer").items()
 
 
 # ---------- tickets: the whole flow ----------
@@ -159,28 +157,15 @@ def test_add_weekly_chore_until_end_of_month(client):
     assert all((b - a).days == 7 for a, b in zip(days, days[1:]))
     assert all(d.month == start.month for d in days) and len(days) >= 4
 
-    # rotation (M-07): Ana starts, then it goes round the house (Tom, Ana, Tom, ...)
-    doers = [e["tenant_id"] for e in response.json()]
-    assert doers == [[ANA, TOM][i % 2] for i in range(len(days))]
-
     schedule = client.get(f"/chores/schedule?year={start.year}&month={start.month}", headers=as_user(ANA)).json()
     assert len(schedule) == len(days)
-    assert [e["is_mine"] for e in schedule] == [d == ANA for d in doers]
+    assert all(e["is_mine"] and e["tenant_name"] == "Ana Tenant" for e in schedule)
 
     # same chore on the same day again: refused
     again = client.post("/chores/assignments", headers=as_user(TOM), json={
         "title": "Clean the oven", "tenant_id": ANA, "first_date": start.isoformat(),
     })
     assert again.status_code == 409
-
-
-def test_once_chore_stays_with_the_chosen_person(client):
-    start = first_of_next_month().isoformat()
-    response = client.post("/chores/assignments", headers=as_user(TOM), json={
-        "title": "Defrost freezer", "tenant_id": ANA, "first_date": start, "repeat": "ONCE",
-    })
-    assert response.status_code == 201
-    assert [e["tenant_id"] for e in response.json()] == [ANA]
 
 
 def test_chore_rules(client):
