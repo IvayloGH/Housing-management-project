@@ -1,11 +1,15 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
+# Switched off for now: routers/face.py (Manuel's test endpoint) loads torch at startup,
+# which is not installed, so the whole app crashed. Turn back on when Manuel is here.
+# from routers.face import router as face_router
 
 from deps import UPLOAD_DIR
-from routers import auth, chores, expenses, groceries, houses, notifications, tickets, users
+from routers import auth, chores, expenses, face_login, groceries, houses, notifications, tickets, users
 
 app = FastAPI(title="Roomify API")
 
@@ -15,12 +19,14 @@ origins = os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in origins.split(",") if o.strip()],
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-for r in (auth, users, groceries, tickets, chores, houses, expenses, notifications):
+for r in (auth, face_login, users, groceries, tickets, chores, houses, expenses, notifications):
     app.include_router(r.router)
+
+# app.include_router(face_router)  # see the note at the top
 
 # Uploaded ticket photos, e.g. /uploads/tickets/3f2a....jpg
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -30,3 +36,15 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    if request.url.path.startswith(("/auth/", "/users/")):
+        response.headers["Cache-Control"] = "no-store"
+    return response

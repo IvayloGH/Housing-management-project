@@ -1,104 +1,112 @@
-"""TEMPORARY security.py - written for the 24/11 deadline so the app can be built.
+"""Authentication and authorization for the original Roomify FastAPI backend.
 
-Eszter owns this file: she reviews it, changes it or replaces it. The routers only
-depend on these five names, so she can rewrite the insides freely:
-    hash_password, verify_password, create_access_token, get_current_user, require_role
-
-- Passwords: hashed with Argon2 (pwdlib), never stored as plain text.
-- Login tokens: signed JWTs (PyJWT). The token only holds the user id and an expiry
-  time; the user (and their role) is loaded from the database on every request.
-- Settings come from .env: SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES.
+JWT Bearer (not cookie sessions). The token's password-version fingerprint
+invalidates old tokens when a password changes, without adding a DB table.
 """
+import hashlib
+import hmac
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 import jwt
-from dotenv import load_dotenv
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pwdlib import PasswordHash
+from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import User
 
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY", "")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-
-# Refuse to start with a missing or example secret: anyone who knows it could make tokens
-if len(SECRET_KEY) < 32 or SECRET_KEY == "change-me":
-    raise RuntimeError(
-        "SECRET_KEY in .env is missing or too short. Make one with: "
-        'python -c "import secrets; print(secrets.token_hex(32))"'
-    )
-if ALGORITHM not in ("HS256", "HS384", "HS512"):
-    raise RuntimeError("ALGORITHM in .env must be HS256, HS384 or HS512")
-
-password_hash = PasswordHash.recommended()  # Argon2
-bearer = HTTPBearer(auto_error=False)  # reads "Authorization: Bearer <token>"
+_hasher = PasswordHasher()
+_bearer = HTTPBearer(auto_error=False)
+_ISSUER = "roomify-api"
+_AUDIENCE = "roomify-web"
 
 
-# ---------- passwords ----------
+def _secret() -> str:
+    secret = os.getenv("SECRET_KEY", "")
+    if len(secret) < 32 or secret in {"change-me", "IDE_KERUL_A_SAJAT_TITKOS_KULCSOD"}:
+        raise RuntimeError("Set SECRET_KEY to a random string of at least 32 characters in backend/.env")
+    return secret
+
+
 def hash_password(password: str) -> str:
-    return password_hash.hash(password)
+    return _hasher.hash(password)
 
 
-def verify_password(password: str, hashed: str) -> bool:
+def verify_password(password: str, stored_hash: str) -> bool:
     try:
-        return password_hash.verify(password, hashed)
-    except Exception:  # e.g. an old test row whose password_hash isn't a real hash
+        return bool(_hasher.verify(stored_hash, password))
+    except (VerificationError, InvalidHashError, TypeError, ValueError):
         return False
 
 
-# ---------- login tokens ----------
+def _password_version(stored_hash: str) -> str:
+    # HMAC prevents exposing information about the hash in the token.
+    return hmac.new(_secret().encode(), stored_hash.encode(), hashlib.sha256).hexdigest()
+
+
 def create_access_token(user: User) -> str:
     now = datetime.now(timezone.utc)
+    minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    if not 1 <= minutes <= 1440:
+        raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be 1..1440")
     payload = {
         "sub": str(user.user_id),
+        "iss": _ISSUER,
+        "aud": _AUDIENCE,
         "iat": now,
-        "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        "nbf": now,
+        "exp": now + timedelta(minutes=minutes),
+        "pv": _password_version(user.password_hash),
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, _secret(), algorithm="HS256")
 
 
-def _not_logged_in() -> HTTPException:
+def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not logged in or your session has expired",
+        detail="Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
-    """Dependency: the logged-in user, or 401."""
-    if credentials is None:
-        raise _not_logged_in()
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _unauthorized()
     try:
-        payload = jwt.decode(
-            credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM],
-            options={"require": ["sub", "exp"]},
+        claims = jwt.decode(
+            credentials.credentials,
+            _secret(),
+            algorithms=["HS256"],
+            audience=_AUDIENCE,
+            issuer=_ISSUER,
+            options={"require": ["exp", "iat", "nbf", "sub", "pv", "iss", "aud"]},
+            leeway=10,
         )
-        user_id = int(payload["sub"])
-    except (jwt.PyJWTError, ValueError):
-        raise _not_logged_in()
+        subject = claims["sub"]
+        if not isinstance(subject, str) or not subject.isascii() or not subject.isdecimal():
+            raise _unauthorized()
+        user = db.get(User, int(subject))
+        if user is None or not isinstance(claims.get("pv"), str):
+            raise _unauthorized()
+        if not hmac.compare_digest(claims["pv"], _password_version(user.password_hash)):
+            raise _unauthorized()
+        return user
+    except (InvalidTokenError, ValueError, OverflowError, TypeError):
+        raise _unauthorized() from None
 
-    user = db.get(User, user_id)
-    if user is None:  # account was deleted after the token was made
-        raise _not_logged_in()
-    return user
 
-
-def require_role(*roles: str):
-    """Dependency: like get_current_user, but 403 unless the user has one of these roles.
-    Use it as: user: User = Depends(require_role("tenant"))"""
+def require_role(*allowed_roles: str) -> Callable:
+    """FastAPI dependency: Depends(require_role('tenant')) etc."""
     def check(user: User = Depends(get_current_user)) -> User:
-        if user.role not in roles:
+        if user.role not in allowed_roles:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed for your role")
         return user
     return check

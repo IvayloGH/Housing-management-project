@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from services.chore_service import due_dates, plan_month
+from services.chore_service import due_dates, plan_month, take_turns
 
 ANNA, BEN, CHLOE = 11, 12, 13
 TENANTS = [ANNA, BEN, CHLOE]
@@ -87,3 +87,31 @@ def test_monthly_chore_is_on_the_first_monday():
 def test_unknown_frequency_is_refused():
     with pytest.raises(ValueError):
         due_dates("YEARLY", 2026, 12)
+
+
+# ---------- take_turns: used by 'Add a chore' ----------
+
+def test_chosen_person_starts_then_next_housemate():
+    assert take_turns(TENANTS, BEN, 4) == [BEN, CHLOE, ANNA, BEN]
+
+
+def test_take_turns_order_of_input_does_not_matter():
+    assert take_turns([CHLOE, ANNA, BEN], ANNA, 3) == take_turns(TENANTS, ANNA, 3) == [ANNA, BEN, CHLOE]
+
+
+def test_take_turns_is_fair():
+    count = Counter(take_turns(TENANTS, CHLOE, 30))
+    assert set(count.values()) == {10}
+
+
+def test_one_turn_is_only_the_chosen_person():
+    assert take_turns(TENANTS, CHLOE, 1) == [CHLOE]
+
+
+def test_alone_in_the_house_does_every_turn():
+    assert take_turns([ANNA], ANNA, 3) == [ANNA, ANNA, ANNA]
+
+
+def test_take_turns_refuses_someone_from_another_house():
+    with pytest.raises(ValueError):
+        take_turns(TENANTS, 99, 2)
