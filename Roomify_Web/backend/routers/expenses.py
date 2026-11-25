@@ -10,6 +10,7 @@ from deps import get_my_house_id
 from models import Expense, ExpenseShare, Tenant, User
 from schemas import BalanceOut, ExpenseCreate, ExpenseOut, ShareOut
 from services.expense_service import split_evenly
+from services.notification_service import notify
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
@@ -112,9 +113,14 @@ def balances(db: Session = Depends(get_db), user: User = Depends(require_role("t
 
 @router.put("/{expense_id}/shares/{tenant_id}/settle", response_model=ExpenseOut)
 def settle_share(expense_id: int, tenant_id: int, db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
-    """'Paid me back': only the person who paid can confirm it."""
+    """Mark one share as paid back. Two people may do this:
+    - the person who paid ('Paid me back' under 'Owed to you'), for anyone's share
+    - the person who owes ('Pay' under 'You owe'), only for their own share
+    The other person gets a notification."""
     expense = db.get(Expense, expense_id)
-    if expense is None or expense.paid_by != user.user_id:
+    i_paid = expense is not None and expense.paid_by == user.user_id
+    my_own_share = expense is not None and tenant_id == user.user_id
+    if not (i_paid or my_own_share):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Expense not found")
 
     share = db.get(ExpenseShare, (expense_id, tenant_id))
@@ -124,5 +130,10 @@ def settle_share(expense_id: int, tenant_id: int, db: Session = Depends(get_db),
         raise HTTPException(status.HTTP_409_CONFLICT, "Already settled")
 
     share.is_settled = True
+    what = expense.description or "shared shopping"
+    if i_paid:
+        notify(db, tenant_id, f"{user.name} confirmed you paid back €{share.amount_owed} for {what}.")
+    else:
+        notify(db, expense.paid_by, f"{user.name} paid you back €{share.amount_owed} for {what}.")
     db.commit()
     return expense_out(db, expense)

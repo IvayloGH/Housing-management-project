@@ -260,6 +260,30 @@ def test_grocery_bought_and_split_cost(client):
     assert settled.status_code == 200
 
 
+def test_person_who_owes_can_pay_their_own_share(client):
+    expense = client.post("/expenses", json={"description": "rice", "amount": "4.00"}, headers=as_user(TOM)).json()
+    url = f"/expenses/{expense['expense_id']}/shares/{ANA}/settle"
+
+    paid = client.put(url, headers=as_user(ANA))          # 'Pay' under 'You owe'
+    assert paid.status_code == 200
+    assert {s["tenant_id"]: s["is_settled"] for s in paid.json()["shares"]}[ANA] is True
+
+    # after a refresh it is gone: nobody owes anything any more
+    balances = {b["tenant_name"]: b["balance"] for b in client.get("/expenses/balances", headers=as_user(ANA)).json()}
+    assert balances == {"Tom Tenant": "0.00", "Ana Tenant": "0.00"}
+    # the person who paid the shop hears about it
+    assert "Ana Tenant paid you back €2.00 for rice" in client.get("/notifications", headers=as_user(TOM)).json()[0]["message"]
+    # pressing it twice
+    assert client.put(url, headers=as_user(ANA)).status_code == 409
+
+
+def test_you_cannot_pay_someone_elses_share(client):
+    expense = client.post("/expenses", json={"amount": "4.00"}, headers=as_user(TOM)).json()
+    # Ana tries to mark Tom's own share; Zed (other house) tries Ana's
+    assert client.put(f"/expenses/{expense['expense_id']}/shares/{TOM}/settle", headers=as_user(ANA)).status_code == 404
+    assert client.put(f"/expenses/{expense['expense_id']}/shares/{ANA}/settle", headers=as_user(ZED)).status_code == 404
+
+
 # ---------- face login while the face_login table is not in Azure SQL yet ----------
 
 def test_face_status_without_face_table_says_not_available(client):
