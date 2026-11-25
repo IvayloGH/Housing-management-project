@@ -85,6 +85,32 @@ def take_turns(tenant_ids: list[int], first: int, turns: int) -> list[int]:
     return [tenants[(start + turn) % len(tenants)] for turn in range(turns)]
 
 
+# Repeating chores ('Every week' / 'Every 2 weeks') are always planned this far ahead
+REPEAT_DAYS = {"WEEKLY": 7, "BIWEEKLY": 14}
+PLAN_AHEAD = timedelta(weeks=12)
+
+
+def next_turns(last_date: date, last_tenant: int, step_days: int,
+               tenant_ids: list[int], until: date) -> list[tuple[date, int]]:
+    """Continue a repeating chore after its last planned turn, up to and including `until`.
+
+    The turn goes to the tenant after `last_tenant` (sorted by user_id), round and round.
+    If `last_tenant` moved out, it starts again at the first tenant.
+    Example: last turn 1 Dec by 12, weekly, tenants [11, 12, 13], until 22 Dec
+             -> [(8 Dec, 13), (15 Dec, 11), (22 Dec, 12)]
+    """
+    tenants = sorted(tenant_ids)
+    if not tenants:
+        return []
+    start = tenants.index(last_tenant) + 1 if last_tenant in tenants else 0
+    turns = []
+    day = last_date + timedelta(days=step_days)
+    while day <= until:
+        turns.append((day, tenants[(start + len(turns)) % len(tenants)]))
+        day += timedelta(days=step_days)
+    return turns
+
+
 if __name__ == "__main__":
     # quick demo: python -m services.chore_service
     names = {11: "Anna", 12: "Ben", 13: "Chloe"}

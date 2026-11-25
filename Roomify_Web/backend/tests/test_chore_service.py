@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from services.chore_service import due_dates, plan_month, take_turns
+from services.chore_service import due_dates, next_turns, plan_month, take_turns
 
 ANNA, BEN, CHLOE = 11, 12, 13
 TENANTS = [ANNA, BEN, CHLOE]
@@ -115,3 +115,27 @@ def test_alone_in_the_house_does_every_turn():
 def test_take_turns_refuses_someone_from_another_house():
     with pytest.raises(ValueError):
         take_turns(TENANTS, 99, 2)
+
+
+# ---------- next_turns: keeps repeating chores planned ----------
+
+def test_next_turns_continues_with_the_next_person():
+    turns = next_turns(date(2026, 12, 1), BEN, 7, TENANTS, until=date(2026, 12, 22))
+    assert turns == [(date(2026, 12, 8), CHLOE), (date(2026, 12, 15), ANNA), (date(2026, 12, 22), BEN)]
+
+
+def test_next_turns_every_two_weeks():
+    turns = next_turns(date(2026, 12, 1), ANNA, 14, TENANTS, until=date(2027, 1, 12))
+    assert turns == [(date(2026, 12, 15), BEN), (date(2026, 12, 29), CHLOE), (date(2027, 1, 12), ANNA)]
+
+
+def test_next_turns_nothing_when_already_planned_far_enough():
+    assert next_turns(date(2026, 12, 22), ANNA, 7, TENANTS, until=date(2026, 12, 22)) == []
+
+
+def test_next_turns_when_last_person_moved_out_starts_at_the_first():
+    assert next_turns(date(2026, 12, 1), 99, 7, TENANTS, until=date(2026, 12, 8)) == [(date(2026, 12, 8), ANNA)]
+
+
+def test_next_turns_empty_house():
+    assert next_turns(date(2026, 12, 1), ANNA, 7, [], until=date(2027, 1, 1)) == []

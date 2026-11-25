@@ -126,7 +126,11 @@ function TenantSchedulePage() {
 
       const name = housemates.find((h) => h.user_id === Number(who))
       const whoText = name && name.is_me ? 'You' : name ? name.name : ''
-      setMessage(`${task.trim()} · ${whoText} added` + (added.length > 1 ? ` (${added.length} times this month)` : ''))
+      setMessage(
+        added.length > 1
+          ? `${task.trim()} added · ${whoText} starts, then housemates take turns`
+          : `${task.trim()} · ${whoText} added`,
+      )
     } catch (err) {
       setFormError(err.message)
     }

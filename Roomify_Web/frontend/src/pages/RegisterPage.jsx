@@ -62,6 +62,19 @@ function RegisterPage() {
           </div>
         </section>
 
+        {/* Security rule (backend): only tenants can sign up themselves.
+            Manager and technician accounts are made by an administrator (backend/create_account.py). */}
+        {role !== 'tenant' && (
+          <section className="card">
+            <h2>Accounts for staff</h2>
+            <p>
+              Property managers and technicians don't sign up here. Roomify creates your account for you:
+              ask the Roomify team for your login details.
+            </p>
+          </section>
+        )}
+
+        {role === 'tenant' && (
         <section className="card">
           <h2>Your account</h2>
           <div className="form-grid">
@@ -84,6 +97,7 @@ function RegisterPage() {
             </div>
           </div>
         </section>
+        )}
 
         {/* Only tenants live in a house, so only they fill in an address */}
         {role === 'tenant' && (
@@ -116,11 +130,11 @@ function RegisterPage() {
 
         {error && <p className="error">{error}</p>}
 
-        <div>
-          <button type="submit" className="btn">
-            {role === 'tenant' ? 'Enter household' : 'Create account'}
-          </button>
-        </div>
+        {role === 'tenant' && (
+          <div>
+            <button type="submit" className="btn">Enter household</button>
+          </div>
+        )}
       </form>
     </div>
   )

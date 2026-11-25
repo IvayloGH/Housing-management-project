@@ -154,7 +154,7 @@ function ManagerHousesPage() {
             </div>
           ))}
 
-          <p className="row-sub">New technicians join by creating their own account and choosing “Technician”.</p>
+          <p className="row-sub">New technicians get their account from the Roomify team.</p>
         </section>
       </div>
     </>
