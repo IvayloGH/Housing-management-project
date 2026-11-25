@@ -1,6 +1,0 @@
-ROOMIFY SECURITY PACKAGE – changes compared with uploaded Roomify.zip
-NEW: backend/security.py, backend/password_policy.py, backend/login_limit.py, backend/SECURITY_README_HU.md
-MODIFIED: backend/routers/auth.py (login limit, password validation, no privileged self-registration), backend/routers/users.py (password change policy), backend/main.py (headers/CORS config), backend/.env.example (safe placeholder)
-UNCHANGED: frontend sources, application business router logic, SQL files.
-EXCLUDED FROM ZIP: backend/.venv, __pycache__, frontend/node_modules (unnecessary and machine-specific); backend/tests (user requested no test files; no new tests are added).
-Limitations: external Azure SQL was not accessible here; see security README for remaining tasks.
