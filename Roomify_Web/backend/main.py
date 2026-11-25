@@ -4,7 +4,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response
-from routers.face import router as face_router
+# Switched off for now: routers/face.py (Manuel's test endpoint) loads torch at startup,
+# which is not installed, so the whole app crashed. Turn back on when Manuel is here.
+# from routers.face import router as face_router
 
 from deps import UPLOAD_DIR
 from routers import auth, chores, expenses, face_login, groceries, houses, notifications, tickets, users
@@ -24,7 +26,7 @@ app.add_middleware(
 for r in (auth, face_login, users, groceries, tickets, chores, houses, expenses, notifications):
     app.include_router(r.router)
 
-app.include_router(face_router)
+# app.include_router(face_router)  # see the note at the top
 
 # Uploaded ticket photos, e.g. /uploads/tickets/3f2a....jpg
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
