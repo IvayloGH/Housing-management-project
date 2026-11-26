@@ -59,6 +59,10 @@ export const addHouse = (street, city) => api('/houses', { method: 'POST', body:
 export const editHouse = (houseId, street, city) =>
   api(`/houses/${houseId}`, { method: 'PUT', body: { street, city } })
 export const getTeam = () => api('/houses/team')
+export const getHouseTenants = (houseId) => api(`/houses/${houseId}/tenants`)
+// Takes the tenant out of the house (their account and history stay)
+export const removeTenant = (houseId, tenantId) =>
+  api(`/houses/${houseId}/tenants/${tenantId}`, { method: 'DELETE' })
 
 // ---------- Notifications ----------
 export const getNotifications = () => api('/notifications')
