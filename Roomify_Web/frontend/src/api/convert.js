@@ -5,14 +5,14 @@ import { photoUrl } from './client.js'
 import { dayText } from '../utils/dates.js'
 
 // Urgency: backend LOW / MEDIUM / HIGH  <->  pages Low / Medium / Urgent
-export const urgencyText = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'Urgent' }
+const urgencyText = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'Urgent' }
 export const urgencyCode = { Low: 'LOW', Medium: 'MEDIUM', Urgent: 'HIGH' }
 
 // Ticket status as the tenant and manager pages show it
 const reportStatus = { OPEN: 'waiting', ASSIGNED: 'inProgress', IN_PROGRESS: 'inProgress', RESOLVED: 'fixed' }
 
 // Ticket status as the technician pages show it
-export const jobStatusText = { ASSIGNED: 'New', IN_PROGRESS: 'In progress', RESOLVED: 'Fixed' }
+const jobStatusText = { ASSIGNED: 'New', IN_PROGRESS: 'In progress', RESOLVED: 'Fixed' }
 export const jobStatusCode = { 'In progress': 'IN_PROGRESS', Fixed: 'RESOLVED' }
 
 // Role names: the backend says property_manager, the page addresses say manager

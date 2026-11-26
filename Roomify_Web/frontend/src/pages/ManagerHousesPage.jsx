@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import Icon from '../components/Icon.jsx'
-import housesPhoto from '../assets/photos/manager-houses.jpg'
+import housesPhoto from '../assets/building.jpg'
 import { useApi } from '../api/useApi.js'
 import { addHouse, editHouse, getHouses, getHouseTenants, getTeam } from '../api/roomify.js'
 

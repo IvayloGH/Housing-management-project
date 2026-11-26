@@ -133,7 +133,7 @@ a {
   padding: 32px 6vw;
   background:
     linear-gradient(90deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0) 45%, rgba(239, 247, 232, 0.55) 100%),
-    url('./assets/login-building.jpg') center / cover no-repeat;
+    url('./assets/building.jpg') center / cover no-repeat;
   color: var(--white);
 }
 
@@ -415,26 +415,10 @@ a {
   }
 }
 
-/* ---------- Forgot password page ---------- */
-.step-label {
-  margin: 0 0 6px;
-  font-size: 12px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 .card-text {
   margin: -8px 0 20px;
   font-size: 15px;
   color: var(--text-muted);
-}
-
-.success {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--green);
 }
 
 .btn:disabled {
@@ -665,7 +649,6 @@ a {
 }
 
 .dot-orange { background: var(--orange); }
-.dot-red { background: var(--red); }
 .dot-green { background: var(--green); }
 .dot-grey { background: #a3a09c; }
 
@@ -1353,7 +1336,6 @@ td select,
 }
 
 .saved .icon,
-.success .icon,
 .file-button .icon,
 .chip .icon {
   margin-right: 4px;
