@@ -3,7 +3,7 @@ import PageHeader from '../components/PageHeader.jsx'
 import Icon from '../components/Icon.jsx'
 import housesPhoto from '../assets/photos/manager-houses.jpg'
 import { useApi } from '../api/useApi.js'
-import { addHouse, editHouse, getHouses, getTeam } from '../api/roomify.js'
+import { addHouse, editHouse, getHouses, getHouseTenants, getTeam, removeTenant } from '../api/roomify.js'
 
 const emptyHouse = { street: '', city: '' }
 
@@ -24,14 +24,44 @@ function ManagerHousesPage() {
   const [editForm, setEditForm] = useState(emptyHouse)
   const [newHouse, setNewHouse] = useState(emptyHouse)
   const [houseError, setHouseError] = useState('')
+  // The tenants of the house you are editing (null while loading)
+  const [tenants, setTenants] = useState(null)
+  const [tenantsError, setTenantsError] = useState('')
+  // The tenant you pressed the red cross for: the "Are you sure?" window is open while this is set
+  const [removing, setRemoving] = useState(null)
+  const [removeError, setRemoveError] = useState('')
 
   const houses = data ? data.houses : []
   const technicians = data ? data.team : []
+  const editingHouse = houses.find((h) => h.id === editingId)
+
+  async function loadTenants(houseId) {
+    setTenants(null)
+    setTenantsError('')
+    try {
+      setTenants(await getHouseTenants(houseId))
+    } catch (err) {
+      setTenantsError(err.message)
+    }
+  }
 
   function startEdit(house) {
     setEditingId(house.id)
     setEditForm({ street: house.street, city: house.city })
     setHouseError('')
+    loadTenants(house.id)
+  }
+
+  async function confirmRemove() {
+    setRemoveError('')
+    try {
+      await removeTenant(editingId, removing.user_id)
+      setRemoving(null)
+      loadTenants(editingId)
+      reload() // the tenant count of the house changes
+    } catch (err) {
+      setRemoveError(err.message)
+    }
   }
 
   async function saveEdit(event) {
@@ -99,6 +129,33 @@ function ManagerHousesPage() {
                   <button type="submit" className="btn btn-small">Save</button>
                   <button type="button" className="link-button" onClick={() => setEditingId(null)}>Cancel</button>
                 </div>
+
+                {/* Who lives here. The red cross takes someone out of the house (after "Are you sure?") */}
+                <div className="tenant-list">
+                  <strong>Tenants</strong>
+                  {tenantsError && <p className="error">{tenantsError}</p>}
+                  {tenants && tenants.length === 0 && <p className="row-sub">Nobody lives here yet.</p>}
+                  {tenants && tenants.map((t) => (
+                    <div className="tenant-row" key={t.user_id}>
+                      <div className="row-left">
+                        <span className="avatar">{t.name[0]}</span>
+                        <div>
+                          <strong>{t.name}</strong>
+                          <p className="row-sub">{t.room_number ? 'Room ' + t.room_number + ' · ' : ''}{t.email}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="remove-button"
+                        aria-label={'Remove ' + t.name + ' from this house'}
+                        title="Remove from this house"
+                        onClick={() => { setRemoving(t); setRemoveError('') }}
+                      >
+                        <Icon name="cross" size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </form>
             ) : (
               <div className="list-row" key={house.id}>
@@ -157,6 +214,34 @@ function ManagerHousesPage() {
           <p className="row-sub">New technicians get their account from the Roomify team.</p>
         </section>
       </div>
+
+      {/* "Are you sure?" window. Clicking outside it, or Cancel, closes it without removing anyone. */}
+      {removing && (
+        <div className="confirm-overlay" onClick={() => setRemoving(null)}>
+          <div
+            className="confirm-box"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="confirm-title">Remove {removing.name}?</h2>
+            <p>
+              {removing.name} will no longer live in {editingHouse ? editingHouse.street : 'this house'}: no more
+              chores, groceries or repairs here. Their account, past reports and payments stay.
+            </p>
+            {removeError && <p className="error">{removeError}</p>}
+            <div className="button-row">
+              <button type="button" className="btn btn-small btn-danger" onClick={confirmRemove}>
+                Yes, remove
+              </button>
+              <button type="button" className="link-button" onClick={() => setRemoving(null)} autoFocus>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

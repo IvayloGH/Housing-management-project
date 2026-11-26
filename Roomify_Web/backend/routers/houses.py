@@ -1,9 +1,13 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import House, MaintenanceTicket, Technician, Tenant, User
+from models import ChoreAssignment, Expense, ExpenseShare, House, MaintenanceTicket, Technician, Tenant, User
+from services.notification_service import notify
 from schemas import HouseOut, HouseSave, ManagerOverview, TechnicianOut, TenantOut
 from security import require_role  # Eszter's
 
@@ -102,6 +106,56 @@ def house_tenants(house_id: int, db: Session = Depends(get_db), user: User = Dep
         TenantOut(user_id=u.user_id, name=u.name, email=u.email, room_number=t.room_number)
         for u, t in rows
     ]
+
+
+@router.delete("/{house_id}/tenants/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_tenant(
+    house_id: int,
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("property_manager")),
+):
+    """Manager: remove a tenant from one of my houses (the red cross on 'Edit house').
+
+    The account stays, and so do their old reports and payments (house history).
+    They just no longer live in this house: no chores, groceries or repairs here any more."""
+    house = db.get(House, house_id)
+    if house is None or house.manager_id != user.user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "House not found")
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None or tenant.house_id != house_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This person doesn't live in this house")
+
+    # Balances are worked out per house: open payments would disappear for the housemates
+    open_payments = db.scalar(
+        select(func.count())
+        .select_from(ExpenseShare)
+        .join(Expense, Expense.expense_id == ExpenseShare.expense_id)
+        .where(ExpenseShare.is_settled == False)  # noqa: E712
+        .where(or_(ExpenseShare.tenant_id == tenant_id, Expense.paid_by == tenant_id))
+    )
+    name = db.get(User, tenant_id).name
+    if open_payments:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"{name} still has open payments with housemates. They need to settle them first.")
+
+    # Their chores from today on go away; the rotation carries on with the others
+    db.execute(
+        delete(ChoreAssignment)
+        .where(ChoreAssignment.tenant_id == tenant_id)
+        .where(ChoreAssignment.is_done == False)  # noqa: E712
+        .where(ChoreAssignment.due_date >= date.today())
+    )
+    tenant.house_id = None
+    tenant.room_number = None
+    notify(db, tenant_id, f"You were removed from {house.name} by your property manager.")
+    try:
+        db.commit()
+    except IntegrityError:
+        # The database still says every tenant must have a house (Razvan's one-line change is missing)
+        db.rollback()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "Removing tenants needs a small database update first. Ask Razvan.")
 
 
 def house_out(db: Session, house: House) -> HouseOut:

@@ -317,3 +317,42 @@ def test_face_status_without_face_table_says_not_available(client):
 def test_health_db(client):
     assert client.get("/health").json() == {"status": "ok"}
     assert client.get("/health/db").json() == {"database": "ok"}
+
+
+# ---------- manager removes a tenant from a house ----------
+
+def test_manager_sees_and_removes_a_tenant(client):
+    tenants = client.get("/houses/1/tenants", headers=as_user(MANAGER)).json()
+    assert {t["name"] for t in tenants} == {"Tom Tenant", "Ana Tenant"}
+
+    start = first_of_next_month().isoformat()
+    client.post("/chores/assignments", headers=as_user(TOM), json={
+        "title": "Bins", "tenant_id": ANA, "first_date": start, "repeat": "WEEKLY",
+    })
+
+    removed = client.delete(f"/houses/1/tenants/{ANA}", headers=as_user(MANAGER))
+    assert removed.status_code == 204
+    assert [t["name"] for t in client.get("/houses/1/tenants", headers=as_user(MANAGER)).json()] == ["Tom Tenant"]
+
+    # Ana's future chores are gone, Tom's stay
+    schedule = client.get(f"/chores/schedule?year={start[:4]}&month={int(start[5:7])}", headers=as_user(TOM)).json()
+    assert schedule and all(e["tenant_name"] == "Tom Tenant" for e in schedule)
+
+    # Ana can still log in and see her profile, but no house any more
+    profile = client.get("/users/me", headers=as_user(ANA)).json()
+    assert profile["house_id"] is None
+    assert client.get("/groceries", headers=as_user(ANA)).status_code == 403
+    assert "removed from Kerkstraat 12" in client.get("/notifications", headers=as_user(ANA)).json()[0]["message"]
+
+
+def test_only_the_houses_manager_can_remove_its_tenants(client):
+    assert client.delete(f"/houses/1/tenants/{ANA}", headers=as_user(OTHER_MANAGER)).status_code == 404
+    assert client.delete(f"/houses/1/tenants/{ZED}", headers=as_user(MANAGER)).status_code == 404   # lives elsewhere
+    assert client.delete(f"/houses/1/tenants/{ANA}", headers=as_user(TOM)).status_code == 403       # tenants can't
+
+
+def test_tenant_with_open_payments_cannot_be_removed(client):
+    client.post("/expenses", json={"description": "rice", "amount": "4.00"}, headers=as_user(TOM))
+    refused = client.delete(f"/houses/1/tenants/{ANA}", headers=as_user(MANAGER))
+    assert refused.status_code == 409
+    assert "open payments" in refused.json()["detail"]

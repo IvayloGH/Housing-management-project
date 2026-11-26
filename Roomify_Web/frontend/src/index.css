@@ -2350,3 +2350,82 @@ textarea {
 
 /* Face login: consent before the camera opens */
 .consent { display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 0.75rem; font-size: 0.9rem; }
+
+/* Manager: tenants of the house being edited, with a red cross to remove someone */
+.tenant-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.tenant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.remove-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--red);
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--red);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.remove-button:hover,
+.remove-button:focus-visible {
+  background: var(--red);
+  color: var(--white);
+}
+
+.btn-danger {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+.btn-danger:hover {
+  background: #c2413d;
+}
+
+/* "Are you sure?" window on top of the page */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(20, 20, 19, 0.5);
+}
+
+.confirm-box {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow);
+}
+
+.confirm-box h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.confirm-box p {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+}

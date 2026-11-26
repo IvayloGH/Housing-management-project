@@ -18,7 +18,7 @@ def build_profile(db: Session, user: User) -> ProfileOut:
 
     if user.role == "tenant":
         tenant = db.get(Tenant, user.user_id)
-        if tenant is not None:
+        if tenant is not None and tenant.house_id is not None:  # None: removed from their house
             house = db.get(House, tenant.house_id)
             profile.house_id = house.house_id
             profile.house_name = house.name

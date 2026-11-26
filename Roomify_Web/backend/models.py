@@ -41,7 +41,14 @@ class Tenant(Base):
     __tablename__ = "tenant"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
-    house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
+    # None = removed from their house by the manager. Needs Razvan's change in Azure SQL
+    # (the index and foreign key have to be dropped and made again around the change):
+    #   DROP INDEX [IX_tenant_house_id] ON [tenant];
+    #   ALTER TABLE [tenant] DROP CONSTRAINT [FK_tenant_house];
+    #   ALTER TABLE [tenant] ALTER COLUMN [house_id] int NULL;
+    #   ALTER TABLE [tenant] ADD CONSTRAINT [FK_tenant_house] FOREIGN KEY ([house_id]) REFERENCES [house]([house_id]);
+    #   CREATE INDEX [IX_tenant_house_id] ON [tenant]([house_id]);
+    house_id: Mapped[int | None] = mapped_column(ForeignKey("house.house_id"))
     room_number: Mapped[str | None] = mapped_column(String(10))
 
 class MaintenanceTicket(Base):
