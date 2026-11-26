@@ -123,8 +123,10 @@ class GroceryItem(Base):
     house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
     name: Mapped[str] = mapped_column(String(100))
     quantity: Mapped[int] = mapped_column(server_default="1")
-    # "low" = running low, "out" = none left
-    status: Mapped[str] = mapped_column(String(10), server_default="low")
+    # "low" = running low, "out" = none left.
+    # deferred: only read when we ask for it, so groceries keep working before
+    # add_grocery_status.sql has been run on Azure (see routers/groceries.py).
+    status: Mapped[str] = mapped_column(String(10), server_default="low", deferred=True)
     is_bought: Mapped[bool] = mapped_column(server_default="0")
 
 
