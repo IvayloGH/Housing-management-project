@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -14,5 +15,7 @@ def get_my_house_id(db: Session, user: User) -> int:
     return tenant.house_id
 
 
-# Folder where uploaded ticket photos are saved (served by main.py at /uploads)
-UPLOAD_DIR = Path(__file__).parent / "uploads"
+# Folder where uploaded ticket photos are saved (served by main.py at /uploads).
+# On Azure set UPLOAD_DIR=/home/uploads: /home is kept after a restart or a new deploy,
+# the app folder itself is not. Locally it stays backend/uploads.
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or Path(__file__).parent / "uploads")

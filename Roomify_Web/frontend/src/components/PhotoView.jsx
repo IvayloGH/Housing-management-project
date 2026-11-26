@@ -5,6 +5,8 @@ import Icon from './Icon.jsx'
 // size: 'large' (manager review) or 'small' (in lists)
 function PhotoView({ src, alt, size = 'large' }) {
   const [big, setBig] = useState(false)
+  // The address of a photo that could not be loaded (e.g. the file is gone from the server)
+  const [brokenSrc, setBrokenSrc] = useState(null)
 
   // Escape closes the big photo
   useEffect(() => {
@@ -16,12 +18,13 @@ function PhotoView({ src, alt, size = 'large' }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [big])
 
-  // No photo: show a grey box with a camera icon
-  if (!src) {
+  // No photo, or it could not be loaded: show a grey box with a camera icon
+  if (!src || src === brokenSrc) {
+    const text = src ? 'Photo not available' : 'No photo added'
     return (
-      <div className={'photo-frame empty photo-' + size} aria-label="No photo added">
+      <div className={'photo-frame empty photo-' + size} aria-label={text}>
         <Icon name="camera" size={size === 'small' ? 20 : 28} strokeWidth={1.5} />
-        {size === 'large' && <span>No photo added</span>}
+        {size === 'large' && <span>{text}</span>}
       </div>
     )
   }
@@ -29,7 +32,7 @@ function PhotoView({ src, alt, size = 'large' }) {
   return (
     <>
       <button type="button" className={'photo-frame photo-' + size} onClick={() => setBig(true)}>
-        <img src={src} alt={alt} />
+        <img src={src} alt={alt} onError={() => setBrokenSrc(src)} />
         {size === 'large' && <span className="photo-hint">Click to enlarge</span>}
       </button>
 
