@@ -9,7 +9,6 @@ import { useUser } from '../api/userContext.js'
 import { getHouseTickets, reportProblem, uploadPhoto } from '../api/roomify.js'
 import { toReport, urgencyCode } from '../api/convert.js'
 
-const rooms = ['Kitchen', 'Bathroom 1', 'Bathroom 2', 'Hallway', 'Living room', 'My room']
 
 // The same rules as the backend (routers/tickets.py), so we can say it before uploading
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -26,6 +25,8 @@ function makeTitle(description, room) {
 
 function TenantReportPage() {
   const { user: profile } = useUser()
+  // The rooms the manager typed for this house, plus your own room
+  const rooms = [...(profile.house_rooms || []), 'My room']
   const { data: tickets, error: loadError, reload } = useApi(getHouseTickets)
   const [room, setRoom] = useState('')
   const [description, setDescription] = useState('')

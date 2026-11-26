@@ -37,6 +37,17 @@ class House(Base):
     address: Mapped[str] = mapped_column(String(255))
 
 
+class HouseRoom(Base):
+    """The rooms of a house, typed by the manager (e.g. Kitchen, Bathroom 1).
+    Tenants pick from these when they add a chore or report a problem.
+    The table is made by add_house_rooms.sql."""
+    __tablename__ = "house_room"
+
+    room_id: Mapped[int] = mapped_column(primary_key=True)
+    house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
+    name: Mapped[str] = mapped_column(String(50))
+
+
 class Tenant(Base):
     __tablename__ = "tenant"
 
@@ -112,6 +123,8 @@ class GroceryItem(Base):
     house_id: Mapped[int] = mapped_column(ForeignKey("house.house_id"))
     name: Mapped[str] = mapped_column(String(100))
     quantity: Mapped[int] = mapped_column(server_default="1")
+    # "low" = running low, "out" = none left
+    status: Mapped[str] = mapped_column(String(10), server_default="low")
     is_bought: Mapped[bool] = mapped_column(server_default="0")
 
 

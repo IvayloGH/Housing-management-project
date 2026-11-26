@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import ChoreAssignment, Expense, ExpenseShare, House, MaintenanceTicket, Technician, Tenant, User
+from services.house_rooms import house_rooms, rooms_by_house, save_rooms
 from services.notification_service import notify
 from schemas import HouseOut, HouseSave, ManagerOverview, TechnicianOut, TenantOut
 from security import require_role  # Eszter's
@@ -35,6 +36,7 @@ def my_houses_with_counts(db: Session, manager: User) -> list[HouseOut]:
         .where(MaintenanceTicket.status != "RESOLVED")
         .group_by(MaintenanceTicket.house_id)
     ).all())
+    rooms = rooms_by_house(db, house_ids)
 
     return [
         HouseOut(
@@ -43,6 +45,7 @@ def my_houses_with_counts(db: Session, manager: User) -> list[HouseOut]:
             address=h.address,
             tenant_count=tenant_counts.get(h.house_id, 0),
             open_ticket_count=open_ticket_counts.get(h.house_id, 0),
+            rooms=rooms.get(h.house_id, []),
         )
         for h in houses
     ]
@@ -168,6 +171,7 @@ def house_out(db: Session, house: House) -> HouseOut:
     return HouseOut(
         house_id=house.house_id, name=house.name, address=house.address,
         tenant_count=tenants, open_ticket_count=open_tickets,
+        rooms=house_rooms(db, house.house_id),
     )
 
 
@@ -178,6 +182,8 @@ def add_house(data: HouseSave, db: Session = Depends(get_db), user: User = Depen
     db.add(house)
     db.commit()
     db.refresh(house)
+    if data.rooms is not None:
+        save_rooms(db, house.house_id, data.rooms)
     return house_out(db, house)
 
 
@@ -196,4 +202,6 @@ def edit_house(
     house.address = f"{street}, {city}"
     db.commit()
     db.refresh(house)
+    if data.rooms is not None:
+        save_rooms(db, house.house_id, data.rooms)
     return house_out(db, house)

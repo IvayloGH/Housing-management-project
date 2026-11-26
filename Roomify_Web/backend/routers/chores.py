@@ -9,7 +9,9 @@ from database import get_db
 from deps import get_my_house_id
 from models import Chore, ChoreAssignment, House, Tenant, User
 from schemas import ChoreAdd, ChorePlanResult, ScheduleEntry
-from services.chore_service import PLAN_AHEAD, REPEAT_DAYS, next_turns, plan_month, take_turns
+from services.chore_service import (
+    PLAN_AHEAD, REPEAT_DAYS, is_monthly_repeat, monthly_days, next_turns, plan_month, take_turns,
+)
 from security import require_role  # Eszter's
 
 router = APIRouter(prefix="/chores", tags=["Chores"])
@@ -155,8 +157,9 @@ def plan_house_month(
 
 
 # How a repeat choice on the 'Add a chore' form is saved as the chore's frequency
-# ('ONCE' is saved as MONTHLY because the database only allows DAILY/WEEKLY/BIWEEKLY/MONTHLY)
-REPEAT_TO_FREQUENCY = {"ONCE": "MONTHLY", "WEEKLY": "WEEKLY", "BIWEEKLY": "BIWEEKLY"}
+# ('ONCE' is saved as MONTHLY too, because the database only allows DAILY/WEEKLY/BIWEEKLY/MONTHLY.
+#  A MONTHLY chore only repeats when its turns are a month apart, see is_monthly_repeat.)
+REPEAT_TO_FREQUENCY = {"ONCE": "MONTHLY", "WEEKLY": "WEEKLY", "MONTHLY": "MONTHLY"}
 
 
 def keep_repeats_planned(db: Session, house_id: int) -> None:
@@ -179,10 +182,31 @@ def keep_repeats_planned(db: Session, house_id: int) -> None:
         for day, who in next_turns(last.due_date, last.tenant_id, REPEAT_DAYS[chore.frequency], housemates, until):
             db.add(ChoreAssignment(chore_id=chore.chore_id, tenant_id=who, due_date=day))
 
+    # 'Every month' chores: same day of the month, next housemate each time
+    monthly = db.scalars(select(Chore).where(Chore.house_id == house_id, Chore.frequency == "MONTHLY")).all()
+    for chore in monthly:
+        turns = db.scalars(
+            select(ChoreAssignment)
+            .where(ChoreAssignment.chore_id == chore.chore_id)
+            .order_by(ChoreAssignment.due_date)
+        ).all()
+        if not is_monthly_repeat([t.due_date for t in turns]):
+            continue  # a 'Once' chore
+        last = turns[-1]
+        new_days = [d for d in monthly_days(turns[0].due_date, until) if d > last.due_date]
+        if not new_days or not housemates:
+            continue
+        if last.tenant_id in housemates:
+            doers = take_turns(housemates, last.tenant_id, len(new_days) + 1)[1:]  # the next one after the last
+        else:
+            doers = take_turns(housemates, sorted(housemates)[0], len(new_days))  # last one moved out
+        for day, who in zip(new_days, doers):
+            db.add(ChoreAssignment(chore_id=chore.chore_id, tenant_id=who, due_date=day))
+
 
 @router.post("/assignments", response_model=list[ScheduleEntry], status_code=status.HTTP_201_CREATED)
 def add_chore(data: ChoreAdd, db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
-    """'Add a chore': once, or every 1 or 2 weeks (planned 12 weeks ahead and kept topped up).
+    """'Add a chore': once, every week or every month (planned 12 weeks ahead and kept topped up).
     The chosen person does the first turn; every repeat goes to the next housemate (rotation, M-07)."""
     house_id = get_my_house_id(db, user)
     tenant = db.get(Tenant, data.tenant_id)
@@ -198,14 +222,17 @@ def add_chore(data: ChoreAdd, db: Session = Depends(get_db), user: User = Depend
         chore = Chore(house_id=house_id, title=title, frequency=REPEAT_TO_FREQUENCY[data.repeat])
         db.add(chore)
         db.flush()
-    elif data.repeat in REPEAT_DAYS:
+    elif data.repeat != "ONCE":
         chore.frequency = data.repeat  # an existing chore now repeats this often
 
-    # Which days: the first day, then every 7 or 14 days for the next 12 weeks
-    days = [data.first_date]
-    step = REPEAT_DAYS.get(data.repeat)
-    while step and days[-1] + timedelta(days=step) <= data.first_date + PLAN_AHEAD:
-        days.append(days[-1] + timedelta(days=step))
+    # Which days: the first day, then every 7 days or every month for the next 12 weeks
+    if data.repeat == "MONTHLY":
+        days = monthly_days(data.first_date, data.first_date + PLAN_AHEAD)
+    else:
+        days = [data.first_date]
+        step = REPEAT_DAYS.get(data.repeat)
+        while step and days[-1] + timedelta(days=step) <= data.first_date + PLAN_AHEAD:
+            days.append(days[-1] + timedelta(days=step))
 
     # Rotation: the chosen person does the first day, then the next housemate each time
     housemates = db.scalars(select(Tenant.user_id).where(Tenant.house_id == house_id)).all()

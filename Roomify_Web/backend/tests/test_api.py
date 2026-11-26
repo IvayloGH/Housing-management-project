@@ -244,6 +244,16 @@ def test_notifications_mark_read_only_your_own(client):
 
 # ---------- groceries + expenses (existing endpoints, end to end) ----------
 
+def test_grocery_running_low_or_out(client):
+    item = client.post("/groceries", json={"name": "Milk"}, headers=as_user(TOM)).json()
+    assert item["status"] == "low"
+    changed = client.put(f"/groceries/{item['item_id']}/status", json={"status": "out"}, headers=as_user(ANA))
+    assert changed.json()["status"] == "out"
+    assert client.put(f"/groceries/{item['item_id']}/status", json={"status": "gone"}, headers=as_user(ANA)).status_code == 422
+    out = client.post("/groceries", json={"name": "Bread", "status": "out"}, headers=as_user(TOM)).json()
+    assert out["status"] == "out"
+
+
 def test_grocery_bought_and_split_cost(client):
     item = client.post("/groceries", json={"name": "Dish soap"}, headers=as_user(TOM)).json()
     assert client.get("/groceries", headers=as_user(ANA)).json()[0]["name"] == "Dish soap"

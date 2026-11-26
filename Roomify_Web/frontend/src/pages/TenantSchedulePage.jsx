@@ -12,9 +12,8 @@ const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
-const commonChores = ['Kitchen', 'Fridge', 'Bins', 'Bathroom 1', 'Bathroom 2', 'Hallway', 'Living room']
 // The repeat choices, and how the backend calls them
-const repeatOptions = { Once: 'ONCE', 'Every week': 'WEEKLY', 'Every 2 weeks': 'BIWEEKLY' }
+const repeatOptions = { Once: 'ONCE', 'Every week': 'WEEKLY', 'Every month': 'MONTHLY' }
 const statusLabel = { done: 'Done', notDone: 'Not done', planned: 'Planned' }
 const statusFromBackend = { DONE: 'done', MISSED: 'notDone', PLANNED: 'planned' }
 
@@ -51,6 +50,8 @@ function TenantSchedulePage() {
   const monthData = useApi(() => getSchedule(year, month), [year, month])
   const houseData = useApi(getHousemates)
   const { user: profile } = useUser()
+  // The rooms the manager typed for this house (Houses & team)
+  const commonChores = profile.house_rooms || []
   const schedule = monthData.data ? perDay(monthData.data) : {}
   const housemates = houseData.data || []
 
@@ -192,7 +193,9 @@ function TenantSchedulePage() {
 
             <div className="field">
               <label htmlFor="task">What needs to be done?</label>
-              <ChipGroup options={commonChores} value={task} onChange={setTask} size="chips-small" />
+              {commonChores.length > 0 && (
+                <ChipGroup options={commonChores} value={task} onChange={setTask} size="chips-small" />
+              )}
               {/* The text box stays empty when a chip above is chosen */}
               <input
                 id="task"

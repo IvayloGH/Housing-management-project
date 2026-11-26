@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import House, Technician, Tenant, User
 from deps import get_my_house_id
+from services.house_rooms import house_rooms
 from schemas import HousemateOut, PasswordChange, ProfileOut, ProfileUpdate
 from security import get_current_user, hash_password, require_role, verify_password
 from password_policy import validate_password
@@ -23,6 +24,7 @@ def build_profile(db: Session, user: User) -> ProfileOut:
             profile.house_id = house.house_id
             profile.house_name = house.name
             profile.room_number = tenant.room_number
+            profile.house_rooms = house_rooms(db, house.house_id)
 
     elif user.role == "technician":
         technician = db.get(Technician, user.user_id)

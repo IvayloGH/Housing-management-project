@@ -139,3 +139,26 @@ def test_next_turns_when_last_person_moved_out_starts_at_the_first():
 
 def test_next_turns_empty_house():
     assert next_turns(date(2026, 12, 1), ANNA, 7, [], until=date(2027, 1, 1)) == []
+
+# ---------- 'Every month' ----------
+from services.chore_service import add_months, is_monthly_repeat, monthly_days  # noqa: E402
+
+
+def test_add_months_keeps_the_day_or_uses_the_last_day():
+    assert add_months(date(2026, 11, 26), 1) == date(2026, 12, 26)
+    assert add_months(date(2026, 12, 15), 1) == date(2027, 1, 15)
+    assert add_months(date(2027, 1, 31), 1) == date(2027, 2, 28)
+    assert add_months(date(2027, 1, 31), 2) == date(2027, 3, 31)
+
+
+def test_monthly_days_for_twelve_weeks():
+    assert monthly_days(date(2026, 11, 26), date(2027, 2, 18)) == [
+        date(2026, 11, 26), date(2026, 12, 26), date(2027, 1, 26),
+    ]
+
+
+def test_once_chores_are_not_monthly_repeats():
+    assert not is_monthly_repeat([date(2026, 11, 26)])
+    assert not is_monthly_repeat([date(2026, 11, 2), date(2026, 11, 26)])
+    assert is_monthly_repeat([date(2026, 11, 26), date(2026, 12, 26)])
+    assert is_monthly_repeat([date(2027, 1, 31), date(2027, 2, 28)])

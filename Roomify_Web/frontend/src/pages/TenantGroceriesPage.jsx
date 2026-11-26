@@ -1,11 +1,10 @@
 import { useRef, useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
-import StatusDot from '../components/StatusDot.jsx'
 import Icon from '../components/Icon.jsx'
 import { useApi } from '../api/useApi.js'
 import { useUser } from '../api/userContext.js'
 import {
-  addExpense, addGrocery, deleteGrocery, getExpenses, getGroceries, markBought, settleShare,
+  addExpense, addGrocery, deleteGrocery, getExpenses, getGroceries, markBought, setGroceryStatus, settleShare,
 } from '../api/roomify.js'
 import { firstName } from '../api/convert.js'
 
@@ -47,6 +46,8 @@ function TenantGroceriesPage() {
   const { user: profile } = useUser()
   const { data, error, reload } = useApi(loadGroceries)
   const [newItem, setNewItem] = useState('')
+  // Is the new item running low or out? ('low' | 'out')
+  const [newStatus, setNewStatus] = useState('low')
   // The item you are buying right now, and what it cost
   const [buyingId, setBuyingId] = useState(null)
   const [price, setPrice] = useState('')
@@ -89,8 +90,9 @@ function TenantGroceriesPage() {
     event.preventDefault()
     if (!newItem.trim()) return
     change('add', async () => {
-      await addGrocery(newItem.trim())
+      await addGrocery(newItem.trim(), newStatus)
       setNewItem('')
+      setNewStatus('low')
     })
   }
 
@@ -116,7 +118,11 @@ function TenantGroceriesPage() {
   }
 
   const myId = profile.user_id
-  const list = data ? data.groceries.filter((g) => !g.is_bought) : []
+  // Items that are out come first: they are needed most
+  const list = data
+    ? data.groceries.filter((g) => !g.is_bought).sort((a, b) => (a.status === 'out' ? 0 : 1) - (b.status === 'out' ? 0 : 1))
+    : []
+  const outCount = list.filter((g) => g.status === 'out').length
   const { youOwe, owedToYou } = data ? balances(data.expenses, myId) : { youOwe: [], owedToYou: [] }
   // Still owed, plus the ones you just paid (after a reload they are no longer in youOwe)
   const paidKeys = justPaid.map((d) => d.key)
@@ -179,7 +185,9 @@ function TenantGroceriesPage() {
         <section className="card">
           <div className="card-head">
             <h2>What the house needs</h2>
-            <span className="card-note">{list.length} still to buy</span>
+            <span className="card-note">
+              {list.length} still to buy{outCount > 0 ? ` · ${outCount} out` : ''}
+            </span>
           </div>
 
           {list.map((item) => (
@@ -206,7 +214,18 @@ function TenantGroceriesPage() {
                 </form>
               ) : (
                 <div className="row-right">
-                  <StatusDot color="orange">To buy</StatusDot>
+                  <span className="status">
+                    <span className={'dot ' + (item.status === 'out' ? 'dot-red' : 'dot-orange')} />
+                    <select
+                      value={item.status}
+                      disabled={busy !== ''}
+                      aria-label={'Is ' + item.name + ' running low or out?'}
+                      onChange={(e) => change('status-' + item.item_id, () => setGroceryStatus(item.item_id, e.target.value))}
+                    >
+                      <option value="low">Running low</option>
+                      <option value="out">Out</option>
+                    </select>
+                  </span>
                   <span className="row-actions">
                     <button
                       className="btn btn-small"
@@ -236,6 +255,20 @@ function TenantGroceriesPage() {
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
             />
+            {/* Running low / Out joined together, so it doesn't look like the Add button */}
+            <div className="segmented" role="group" aria-label="Is the new item running low or out?">
+              {[['low', 'Running low'], ['out', 'Out']].map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={newStatus === value ? 'selected' : ''}
+                  aria-pressed={newStatus === value}
+                  onClick={() => setNewStatus(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button type="submit" className="btn btn-small" disabled={busy !== ''}>
               {busy === 'add' ? 'Adding…' : 'Add'}
             </button>

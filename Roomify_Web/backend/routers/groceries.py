@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import GroceryItem, Tenant, User
-from schemas import GroceryCreate, GroceryOut
+from schemas import GroceryCreate, GroceryOut, GroceryStatusUpdate
 from security import require_role  # Eszter's
 from deps import get_my_house_id
 
@@ -32,8 +32,18 @@ def list_groceries(db: Session = Depends(get_db), user: User = Depends(require_r
 
 @router.post("", response_model=GroceryOut, status_code=status.HTTP_201_CREATED)
 def add_grocery(data: GroceryCreate, db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
-    item = GroceryItem(house_id=get_my_house_id(db, user), name=data.name, quantity=data.quantity)
+    item = GroceryItem(house_id=get_my_house_id(db, user), name=data.name, quantity=data.quantity, status=data.status)
     db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/{item_id}/status", response_model=GroceryOut)
+def change_status(item_id: int, data: GroceryStatusUpdate, db: Session = Depends(get_db), user: User = Depends(require_role("tenant"))):
+    """Running low <-> out."""
+    item = get_item_in_my_house(db, item_id, get_my_house_id(db, user))
+    item.status = data.status
     db.commit()
     db.refresh(item)
     return item

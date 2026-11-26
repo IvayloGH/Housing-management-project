@@ -21,12 +21,15 @@ export const turnOffFace = () => api('/auth/face', { method: 'DELETE' })
 export const getSchedule = (year, month) => api(`/chores/schedule?year=${year}&month=${month}`)
 export const getMyChores = (limit = 3) => api('/chores/mine?limit=' + limit)
 export const markChoreDone = (assignmentId) => api(`/chores/assignments/${assignmentId}/done`, { method: 'PUT' })
-// chore: { title, tenant_id, first_date: '2026-11-30', repeat: 'ONCE' | 'WEEKLY' | 'BIWEEKLY' }
+// chore: { title, tenant_id, first_date: '2026-11-30', repeat: 'ONCE' | 'WEEKLY' | 'MONTHLY' }
 export const addChore = (chore) => api('/chores/assignments', { method: 'POST', body: chore })
 
 // ---------- Groceries and expenses ----------
 export const getGroceries = () => api('/groceries')
-export const addGrocery = (name) => api('/groceries', { method: 'POST', body: { name } })
+// status: 'low' (running low) | 'out' (none left)
+export const addGrocery = (name, status) => api('/groceries', { method: 'POST', body: { name, status } })
+export const setGroceryStatus = (itemId, status) =>
+  api(`/groceries/${itemId}/status`, { method: 'PUT', body: { status } })
 export const markBought = (itemId) => api(`/groceries/${itemId}/bought`, { method: 'PUT' })
 export const deleteGrocery = (itemId) => api(`/groceries/${itemId}`, { method: 'DELETE' })
 export const getExpenses = () => api('/expenses')
@@ -55,9 +58,10 @@ export const setJobStatus = (ticketId, status) =>
 
 // ---------- Houses and technicians (manager) ----------
 export const getHouses = () => api('/houses')
-export const addHouse = (street, city) => api('/houses', { method: 'POST', body: { street, city } })
-export const editHouse = (houseId, street, city) =>
-  api(`/houses/${houseId}`, { method: 'PUT', body: { street, city } })
+// rooms: ['Kitchen', 'Bathroom 1', ...], the rooms tenants can choose from
+export const addHouse = (street, city, rooms) => api('/houses', { method: 'POST', body: { street, city, rooms } })
+export const editHouse = (houseId, street, city, rooms) =>
+  api(`/houses/${houseId}`, { method: 'PUT', body: { street, city, rooms } })
 export const getTeam = () => api('/houses/team')
 export const getHouseTenants = (houseId) => api(`/houses/${houseId}/tenants`)
 // Takes the tenant out of the house (their account and history stay)

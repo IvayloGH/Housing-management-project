@@ -39,9 +39,16 @@ class UserOut(BaseModel):
     email: EmailStr
     role: str
 
+# "low" = running low, "out" = none left
+GroceryStatus = Literal["low", "out"]
+
 class GroceryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     quantity: int = Field(default=1, ge=1)
+    status: GroceryStatus = "low"
+
+class GroceryStatusUpdate(BaseModel):
+    status: GroceryStatus
 
 class GroceryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -49,6 +56,7 @@ class GroceryOut(BaseModel):
     item_id: int
     name: str
     quantity: int
+    status: GroceryStatus
     is_bought: bool
 
 # ---------- Tickets ----------
@@ -136,7 +144,7 @@ class ChoreAdd(BaseModel):
     title: str = Field(min_length=1, max_length=100)
     tenant_id: int
     first_date: date
-    repeat: Literal["ONCE", "WEEKLY", "BIWEEKLY"] = "ONCE"
+    repeat: Literal["ONCE", "WEEKLY", "MONTHLY"] = "ONCE"
 
 
 class ChorePlanResult(BaseModel):
@@ -154,12 +162,15 @@ class HouseOut(BaseModel):
     address: str
     tenant_count: int
     open_ticket_count: int
+    rooms: list[str] = []
 
 
 class HouseSave(BaseModel):
     """Add or edit a house. Stored as name = street, address = "street, city"."""
     street: str = Field(min_length=1, max_length=100)
     city: str = Field(min_length=1, max_length=100)
+    # The rooms of the house, e.g. ["Kitchen", "Bathroom 1"]. Left out: the rooms stay as they are.
+    rooms: list[str] | None = Field(default=None, max_length=30)
 
 
 class ManagerOverview(BaseModel):
@@ -193,6 +204,7 @@ class ProfileOut(BaseModel):
     house_id: int | None = None
     house_name: str | None = None
     room_number: str | None = None
+    house_rooms: list[str] = []   # the rooms the manager typed for the house
     # Only filled for technicians:
     specialty: str | None = None
 

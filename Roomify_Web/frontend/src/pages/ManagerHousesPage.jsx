@@ -5,12 +5,20 @@ import housesPhoto from '../assets/building.jpg'
 import { useApi } from '../api/useApi.js'
 import { addHouse, editHouse, getHouses, getHouseTenants, getTeam, removeTenant } from '../api/roomify.js'
 
-const emptyHouse = { street: '', city: '' }
+const emptyHouse = { street: '', city: '', rooms: '' }
+
+// "Kitchen, Bathroom 1 , " -> ['Kitchen', 'Bathroom 1']
+function roomList(text) {
+  return text.split(',').map((r) => r.trim()).filter((r) => r !== '')
+}
 
 // The backend keeps name = street and address = "street, city"
 function toHouse(h) {
   const city = h.address.includes(', ') ? h.address.slice(h.address.lastIndexOf(', ') + 2) : ''
-  return { id: h.house_id, street: h.name, city, tenants: h.tenant_count, openReports: h.open_ticket_count }
+  return {
+    id: h.house_id, street: h.name, city, tenants: h.tenant_count, openReports: h.open_ticket_count,
+    rooms: h.rooms || [],
+  }
 }
 
 // The tenants of one house, loaded when you click "Show tenants"
@@ -72,7 +80,7 @@ function ManagerHousesPage() {
 
   function startEdit(house) {
     setEditingId(house.id)
-    setEditForm({ street: house.street, city: house.city })
+    setEditForm({ street: house.street, city: house.city, rooms: house.rooms.join(', ') })
     setHouseError('')
     loadTenants(house.id)
   }
@@ -93,7 +101,7 @@ function ManagerHousesPage() {
     event.preventDefault()
     setSaving(true)
     try {
-      await editHouse(editingId, editForm.street.trim(), editForm.city.trim())
+      await editHouse(editingId, editForm.street.trim(), editForm.city.trim(), roomList(editForm.rooms))
       setEditingId(null)
       setHouseError('')
       reload()
@@ -111,7 +119,7 @@ function ManagerHousesPage() {
     }
     setSaving(true)
     try {
-      await addHouse(newHouse.street.trim(), newHouse.city.trim())
+      await addHouse(newHouse.street.trim(), newHouse.city.trim(), roomList(newHouse.rooms))
       setNewHouse(emptyHouse)
       setHouseError('')
       reload()
@@ -155,6 +163,11 @@ function ManagerHousesPage() {
                       onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} required />
                   </div>
                 </div>
+                <div className="field">
+                  <label htmlFor="edit-rooms">Rooms <span className="optional">separate with commas</span></label>
+                  <input id="edit-rooms" placeholder="e.g. Kitchen, Bathroom 1, Hallway, Living room" value={editForm.rooms}
+                    onChange={(e) => setEditForm({ ...editForm, rooms: e.target.value })} />
+                </div>
                 {houseError && <p className="error">{houseError}</p>}
                 <div className="button-row">
                   <button type="submit" className="btn btn-small" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
@@ -196,6 +209,7 @@ function ManagerHousesPage() {
                     <div>
                       <strong>{house.street}, {house.city}</strong>
                       <p className="row-sub">{house.tenants} tenants · {house.openReports} open reports</p>
+                      <p className="row-sub">{house.rooms.length > 0 ? 'Rooms: ' + house.rooms.join(', ') : 'No rooms yet: press Edit to add them'}</p>
                     </div>
                   </div>
                   <span className="row-actions">
@@ -225,6 +239,11 @@ function ManagerHousesPage() {
                 <input id="new-city" placeholder="e.g. Eindhoven" value={newHouse.city}
                   onChange={(e) => setNewHouse({ ...newHouse, city: e.target.value })} />
               </div>
+            </div>
+            <div className="field">
+              <label htmlFor="new-rooms">Rooms <span className="optional">separate with commas</span></label>
+              <input id="new-rooms" placeholder="e.g. Kitchen, Bathroom 1, Hallway, Living room" value={newHouse.rooms}
+                onChange={(e) => setNewHouse({ ...newHouse, rooms: e.target.value })} />
             </div>
             <p className="row-sub">Tenants join this house by filling in the same street and city when they sign up.</p>
             {houseError && editingId === null && <p className="error">{houseError}</p>}

@@ -85,9 +85,35 @@ def take_turns(tenant_ids: list[int], first: int, turns: int) -> list[int]:
     return [tenants[(start + turn) % len(tenants)] for turn in range(turns)]
 
 
-# Repeating chores ('Every week' / 'Every 2 weeks') are always planned this far ahead
+# Repeating chores ('Every week', and older 'Every 2 weeks' chores) are always planned this far ahead
 REPEAT_DAYS = {"WEEKLY": 7, "BIWEEKLY": 14}
 PLAN_AHEAD = timedelta(weeks=12)
+
+
+def add_months(day: date, months: int) -> date:
+    """The same day of the month, `months` later. If that month is shorter, its last day.
+    Example: add_months(31 Jan, 1) -> 28 Feb, add_months(31 Jan, 2) -> 31 Mar"""
+    month_index = day.month - 1 + months
+    year = day.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, min(day.day, monthrange(year, month)[1]))
+
+
+def monthly_days(first: date, until: date) -> list[date]:
+    """'Every month': the first day, then the same day each next month, up to and including `until`."""
+    days = []
+    while add_months(first, len(days)) <= until:
+        days.append(add_months(first, len(days)))
+    return days
+
+
+def is_monthly_repeat(dates: list[date]) -> bool:
+    """A MONTHLY chore repeats every month if its last two turns are about a month apart.
+    ('Once' chores are also saved as MONTHLY, because the database has no ONCE.)"""
+    if len(dates) < 2:
+        return False
+    last, before = sorted(dates)[-1], sorted(dates)[-2]
+    return 28 <= (last - before).days <= 31
 
 
 def next_turns(last_date: date, last_tenant: int, step_days: int,
