@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import StatusDot from '../components/StatusDot.jsx'
-import { todayText } from '../utils/dateText.js'
+import { todayText } from '../utils/dates.js'
 import { useApi } from '../api/useApi.js'
-import { addNote, getMyJobs, getProfile, setJobStatus } from '../api/roomify.js'
+import { useUser } from '../api/userContext.js'
+import { addNote, getMyJobs, setJobStatus } from '../api/roomify.js'
 import { firstName, toJob } from '../api/convert.js'
 
 // What the technician writes is saved as a ticket note: "Tue 24 Nov · Replaced the drain seal".
@@ -31,22 +32,21 @@ function historyOf(tickets) {
   return rows
 }
 
-async function loadWork() {
-  const [profile, tickets] = await Promise.all([getProfile(), getMyJobs()])
-  return { name: firstName(profile.name), tickets }
-}
-
 function TechnicianWorkPage() {
-  const { data, error, reload } = useApi(loadWork)
+  const { user } = useUser()
+  const { data, error, reload } = useApi(getMyJobs)
   const [selectedId, setSelectedId] = useState(null)
+  const [saving, setSaving] = useState(false)
+  // The note that is already saved, when changing the status failed afterwards.
+  // Then "Save" again only changes the status, so the note is not added twice.
+  const savedNote = useRef(null)
 
   // The "Add finished work" form
-  const [fixed, setFixed] = useState(true)
   const [date, setDate] = useState(todayText())
   const [text, setText] = useState('')
   const [formError, setFormError] = useState('')
 
-  const tickets = data ? data.tickets : []
+  const tickets = data || []
   // The jobs that are not fixed yet
   const requests = tickets.filter((t) => t.status !== 'RESOLVED').map(toJob)
   const history = historyOf(tickets)
@@ -64,14 +64,20 @@ function TechnicianWorkPage() {
     const fixDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
     const dateLabel = fixDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 
+    const noteText = dateLabel + SEPARATOR + text.trim()
+    setSaving(true)
     try {
-      await addNote(selected.id, dateLabel + SEPARATOR + text.trim())
-      if (fixed) {
-        // Fixed: the job is done, so it leaves the list of requests
-        await setJobStatus(selected.id, 'RESOLVED')
-      } else if (selected.status === 'New') {
+      const already = savedNote.current
+      if (!already || already.id !== selected.id || already.text !== noteText) {
+        await addNote(selected.id, noteText)
+        savedNote.current = { id: selected.id, text: noteText }
+      }
+      // Writing down work means the job has started. Marking it "Fixed" is done on the
+      // My jobs page (the Status list there).
+      if (selected.status === 'New') {
         await setJobStatus(selected.id, 'IN_PROGRESS')
       }
+      savedNote.current = null
       setText('')
       setFormError('')
       setSelectedId(null)
@@ -79,11 +85,12 @@ function TechnicianWorkPage() {
     } catch (err) {
       setFormError(err.message)
     }
+    setSaving(false)
   }
 
   return (
     <>
-      <PageHeader eyebrow={`Technician · ${data ? data.name : ''} · Work done`} title="What you've fixed." />
+      <PageHeader eyebrow={`Technician · ${firstName(user.name)} · Work done`} title="What you've fixed." />
 
       <div className="page-body">
         {error && <p className="error">{error}</p>}
@@ -123,19 +130,7 @@ function TechnicianWorkPage() {
                 </div>
 
                 <div className="field">
-                  <label>Is it fixed?</label>
-                  <div className="chips">
-                    <button type="button" className={fixed ? 'chip selected' : 'chip'} onClick={() => setFixed(true)}>
-                      Yes, it's fixed
-                    </button>
-                    <button type="button" className={!fixed ? 'chip selected' : 'chip'} onClick={() => setFixed(false)}>
-                      Not yet, I need to come back
-                    </button>
-                  </div>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="date">When did you fix it?</label>
+                  <label htmlFor="date">When did you do it?</label>
                   <input id="date" type="date" max={todayText()} value={date} onChange={(e) => setDate(e.target.value)} />
                 </div>
 
@@ -151,7 +146,7 @@ function TechnicianWorkPage() {
                 </div>
 
                 {formError && <p className="error">{formError}</p>}
-                <button type="submit" className="btn btn-full">Save</button>
+                <button type="submit" className="btn btn-full" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
               </>
             )}
           </form>
@@ -168,7 +163,7 @@ function TechnicianWorkPage() {
                   <p className="history-text">{h.text}</p>
                 </div>
                 <StatusDot color={h.fixed ? 'green' : 'orange'}>
-                  {h.fixed ? 'Fixed' : 'Needs another visit'}
+                  {h.fixed ? 'Fixed' : 'In progress'}
                 </StatusDot>
               </div>
             ))}

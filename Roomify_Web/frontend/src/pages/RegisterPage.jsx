@@ -1,6 +1,8 @@
+
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Navigate } from 'react-router'
 import { register } from '../api/auth.js'
+import { useUser } from '../api/userContext.js'
 import Logo from '../components/Logo.jsx'
 import PageHeader from '../components/PageHeader.jsx'
 
@@ -17,21 +19,55 @@ function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [street, setStreet] = useState('')
-  const [postcode, setPostcode] = useState('')
   const [city, setCity] = useState('')
   const [room, setRoom] = useState('')
   const [error, setError] = useState('')
-  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+
+  // NEW: Optional face login setup
+  const [enableFaceLogin, setEnableFaceLogin] = useState(false)
+  const [redirectAfterRegistration, setRedirectAfterRegistration] = useState(null)
+
+  const { user, setUser } = useUser()
+
+  // NEW: After registration, follow the selected destination
+  if (redirectAfterRegistration) {
+    return <Navigate to={redirectAfterRegistration} replace />
+  }
+
+  // Logged in: go to your home page
+  if (user) {
+    return <Navigate to={'/' + user.role} replace />
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    setBusy(true)
+
     try {
-      // The postcode is not stored: a house is found by street + city
-      const user = await register({ role, name, email, password, street, postcode, city, room })
-      navigate('/' + user.role)
+      // A house is found by its street + city.
+      // Only tenants can sign up themselves.
+      const newUser = await register({
+        name,
+        email,
+        password,
+        street,
+        city,
+        room
+      })
+
+      // NEW: Choose where to go after creating the account
+      const destination = enableFaceLogin
+        ? '/face-setup'
+        : '/' + newUser.role
+
+      setRedirectAfterRegistration(destination)
+      setUser(newUser)
+
     } catch (err) {
       setError(err.message)
+      setBusy(false)
     }
   }
 
@@ -75,28 +111,31 @@ function RegisterPage() {
         )}
 
         {role === 'tenant' && (
-        <section className="card">
-          <h2>Your account</h2>
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="name">Full name</label>
-              <input id="name" placeholder="Your full name" value={name}
-                onChange={(e) => setName(e.target.value)} required />
+          <section className="card">
+            <h2>Your account</h2>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="name">Full name</label>
+                <input id="name" placeholder="Your full name" value={name}
+                  onChange={(e) => setName(e.target.value)} required />
+              </div>
+
+              {/* Empty box, so Email starts on a new line */}
+              <div />
+
+              <div className="field">
+                <label htmlFor="email">Email</label>
+                <input id="email" type="email" placeholder="name@example.com" value={email}
+                  onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+
+              <div className="field">
+                <label htmlFor="password">Password</label>
+                <input id="password" type="password" placeholder="At least 8 characters" value={password}
+                  onChange={(e) => setPassword(e.target.value)} required />
+              </div>
             </div>
-            {/* Empty box, so Email starts on a new line */}
-            <div />
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" placeholder="name@example.com" value={email}
-                onChange={(e) => setEmail(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input id="password" type="password" placeholder="At least 8 characters" value={password}
-                onChange={(e) => setPassword(e.target.value)} required />
-            </div>
-          </div>
-        </section>
+          </section>
         )}
 
         {/* Only tenants live in a house, so only they fill in an address */}
@@ -108,11 +147,6 @@ function RegisterPage() {
                 <label htmlFor="street">Street and house number</label>
                 <input id="street" placeholder="e.g. Kerkstraat 12" value={street}
                   onChange={(e) => setStreet(e.target.value)} required />
-              </div>
-              <div className="field">
-                <label htmlFor="postcode">Postcode</label>
-                <input id="postcode" placeholder="e.g. 5611 AB" value={postcode}
-                  onChange={(e) => setPostcode(e.target.value)} required />
               </div>
               <div className="field">
                 <label htmlFor="city">City</label>
@@ -128,11 +162,46 @@ function RegisterPage() {
           </section>
         )}
 
+        {/* NEW: Optional face recognition */}
+        {role === 'tenant' && (
+          <section className="card">
+            <h2>Face Login</h2>
+            <p>
+              Would you like to use facial recognition to log in?
+              You can also enable it later.
+            </p>
+
+            <div className="role-options">
+              <label
+                className={
+                  enableFaceLogin
+                    ? 'role-option selected'
+                    : 'role-option'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={enableFaceLogin}
+                  onChange={(e) => setEnableFaceLogin(e.target.checked)}
+                />
+
+                <strong>Enable Face Login</strong>
+
+                <span>
+                  Set up facial recognition after creating your account.
+                </span>
+              </label>
+            </div>
+          </section>
+        )}
+
         {error && <p className="error">{error}</p>}
 
         {role === 'tenant' && (
           <div>
-            <button type="submit" className="btn">Enter household</button>
+            <button type="submit" className="btn" disabled={busy}>
+              {busy ? 'Creating your account…' : 'Enter household'}
+            </button>
           </div>
         )}
       </form>

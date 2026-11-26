@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
@@ -27,6 +27,14 @@ async function loadReview() {
   }
 }
 
+const header = (
+  <PageHeader
+    eyebrow="Property manager · Review & assign"
+    title="Send the right technician."
+    titleMuted="Check the report, then choose who goes and when."
+  />
+)
+
 // Loads the reports first, then shows the review screen
 function ManagerReviewPage() {
   const { data, error } = useApi(loadReview)
@@ -36,17 +44,70 @@ function ManagerReviewPage() {
   if (!data) {
     return (
       <>
-        <PageHeader eyebrow="Property manager · Review & assign" title="Send the right technician." />
+        {header}
         <div className="page-body">{error ? <p className="error">{error}</p> : <p className="row-sub">Loading…</p>}</div>
       </>
     )
   }
+
+  // A report that is already assigned or fixed (the "Open" button on the overview):
+  // only show it. Assigning it again would set an in-progress job back to "new".
+  const asked = data.reports.find((r) => r.id === askedId)
+  if (asked && asked.status !== 'waiting') {
+    return (
+      <>
+        {header}
+        <div className="page-body">
+          <ReportDetails report={asked} />
+        </div>
+      </>
+    )
+  }
+
   return <ReviewScreen reports={data.reports} technicians={data.technicians} askedId={askedId} />
 }
 
+// What the tenant sent (left card on the review screen, or the whole page for an assigned report)
+function TenantReport({ report }) {
+  return (
+    <section className="card">
+      <h2>What the tenant sent</h2>
+      <PhotoView src={report.photo} alt={'Photo of: ' + report.title} />
+      <p className="tenant-text">{report.description}</p>
+      <div className="detail-row"><span>Where</span><strong>{report.house} · {report.room}</strong></div>
+      <div className="detail-row"><span>Reported by</span><strong>{report.reportedBy}, {report.posted.toLowerCase()}</strong></div>
+      <div className="detail-row"><span>Category</span><strong>{report.category}</strong></div>
+    </section>
+  )
+}
+
+// Read-only view of a report that is assigned or fixed
+function ReportDetails({ report }) {
+  return (
+    <>
+      <div className="calendar-top">
+        <h2 className="section-title">{report.title}</h2>
+        <Link to="/manager" className="link-button">Back to overview</Link>
+      </div>
+      <div className="grid-2">
+        <TenantReport report={report} />
+        <section className="card">
+          <h2>{report.status === 'fixed' ? 'Fixed' : 'In progress'}</h2>
+          <div className="detail-row"><span>Technician</span><strong>{report.technicianFullName || '-'}</strong></div>
+          <div className="detail-row">
+            <span>Urgency</span>
+            <strong className={'urgency urgency-' + report.urgency.toLowerCase()}>{report.urgency}</strong>
+          </div>
+          <div className="detail-row"><span>Newest note</span><strong>{report.lastNote || '-'}</strong></div>
+        </section>
+      </div>
+    </>
+  )
+}
+
 function ReviewScreen({ reports, technicians, askedId }) {
-  // The reports that wait for the manager (plus the asked one, if it is already in progress)
-  const waiting = reports.filter((r) => r.status === 'waiting' || r.id === askedId)
+  // The reports that wait for the manager
+  const waiting = reports.filter((r) => r.status === 'waiting')
   // The report to show first: the asked one, otherwise the first one
   const first = waiting.find((r) => r.id === askedId) || waiting[0]
 
@@ -59,11 +120,15 @@ function ReviewScreen({ reports, technicians, askedId }) {
   const [urgency, setUrgency] = useState(first ? first.urgency : 'Low')
   const [category, setCategory] = useState(first ? categoryOf(first) : 'Other')
   const [doneBy, setDoneBy] = useState(doneByOptions[0])
-  const [search, setSearch] = useState(first && first.technician ? first.technician : '')
-  const [technician, setTechnician] = useState('')
+  const [search, setSearch] = useState('')
+  const [technicianId, setTechnicianId] = useState(null)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [confirmDecline, setConfirmDecline] = useState(false)
+  // Which steps of "Save" already worked per report, so a retry doesn't repeat them
+  // (e.g. the note was saved but assigning failed: don't add the note again)
+  const progress = useRef({})
 
   const selected = list.find((r) => r.id === selectedId)
   // Show 3 cards, or all of them after "See all"
@@ -71,7 +136,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
 
   // Technicians whose name matches what you type (only while no one is chosen yet)
   let suggestions = []
-  if (search !== '' && technician === '') {
+  if (search !== '' && technicianId === null) {
     suggestions = technicians.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
   }
 
@@ -81,10 +146,11 @@ function ReviewScreen({ reports, technicians, askedId }) {
     setUrgency(report.urgency)
     setCategory(categoryOf(report))
     setDoneBy(doneByOptions[0])
-    setSearch(report.technician || '')
-    setTechnician('')
+    setSearch('')
+    setTechnicianId(null)
     setNote('')
     setError('')
+    setConfirmDecline(false)
   }
 
   // The manager is done with this report: take it out of the list and select the next one
@@ -101,18 +167,30 @@ function ReviewScreen({ reports, technicians, askedId }) {
 
   async function handleSave(event) {
     event.preventDefault()
-    const chosen = technicians.find((t) => t.name === technician)
+    const chosen = technicians.find((t) => t.id === technicianId)
     if (!chosen) {
       setError('Choose a technician from the list.')
       return
     }
     setSaving(true)
+    setError('')
+    const id = selected.id
+    const changes = { urgency: urgencyCode[urgency], category }
+    // There is no date column yet, so "Done by" goes to the technician as a note
+    const noteText = 'Done by: ' + doneBy + (note.trim() ? '\n' + note.trim() : '')
+    const done = progress.current[id] || {}
+    progress.current[id] = done
     try {
-      await updateTicket(selected.id, { urgency: urgencyCode[urgency], category })
-      // There is no date column yet, so "Done by" goes to the technician as a note
-      const noteText = 'Done by: ' + doneBy + (note.trim() ? '\n' + note.trim() : '')
-      await addNote(selected.id, noteText)
-      await assignTicket(selected.id, chosen.id)
+      if (JSON.stringify(done.changes) !== JSON.stringify(changes)) {
+        await updateTicket(id, changes)
+        done.changes = changes
+      }
+      if (done.note !== noteText) {
+        await addNote(id, noteText)
+        done.note = noteText
+      }
+      await assignTicket(id, chosen.id)
+      delete progress.current[id]
       finish(selected.title + ' is sent to ' + chosen.name)
     } catch (err) {
       setError(err.message)
@@ -121,21 +199,20 @@ function ReviewScreen({ reports, technicians, askedId }) {
   }
 
   async function handleDecline() {
+    setSaving(true)
     try {
       await declineTicket(selected.id)
       finish(selected.title + ' is declined')
     } catch (err) {
       setError(err.message)
     }
+    setSaving(false)
+    setConfirmDecline(false)
   }
 
   return (
     <>
-      <PageHeader
-        eyebrow="Property manager · Review & assign"
-        title="Send the right technician."
-        titleMuted="Check the report, then choose who goes and when."
-      />
+      {header}
 
       <div className="page-body">
         <div className="calendar-top">
@@ -162,6 +239,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
               <button
                 key={r.id}
                 className={r.id === selectedId ? 'select-card selected' : 'select-card'}
+                aria-pressed={r.id === selectedId}
                 onClick={() => { selectReport(r); setMessage('') }}
               >
                 <span className="row-top">
@@ -169,9 +247,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
                   <span className={'urgency urgency-' + r.urgency.toLowerCase()}>{r.urgency}</span>
                 </span>
                 <span className="row-sub">{r.house} · {r.room} · {r.posted.toLowerCase()}</span>
-                <span className="not-assigned">
-                  {r.technician ? r.technician + ' · in progress' : 'Not assigned yet'}
-                </span>
+                <span className="not-assigned">Not assigned yet</span>
               </button>
             ))}
           </div>
@@ -180,14 +256,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
         {selected && (
           <div className="grid-2">
             {/* ---------- Left: what the tenant sent ---------- */}
-            <section className="card">
-              <h2>What the tenant sent</h2>
-              <PhotoView src={selected.photo} alt={'Photo of: ' + selected.title} />
-              <p className="tenant-text">{selected.description}</p>
-              <div className="detail-row"><span>Where</span><strong>{selected.house} · {selected.room}</strong></div>
-              <div className="detail-row"><span>Reported by</span><strong>{selected.reportedBy}, {selected.posted.toLowerCase()}</strong></div>
-              <div className="detail-row"><span>Category</span><strong>{selected.category}</strong></div>
-            </section>
+            <TenantReport report={selected} />
 
             {/* ---------- Right: assign a technician ---------- */}
             <form className="card assign-card" onSubmit={handleSave}>
@@ -225,7 +294,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
                     value={search}
                     onChange={(e) => {
                       setSearch(e.target.value)
-                      setTechnician('')
+                      setTechnicianId(null)
                       setError('')
                     }}
                   />
@@ -234,7 +303,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
                   <ul className="suggestions">
                     {suggestions.map((t) => (
                       <li key={t.id}>
-                        <button type="button" onClick={() => { setTechnician(t.name); setSearch(t.name) }}>
+                        <button type="button" onClick={() => { setTechnicianId(t.id); setSearch(t.name) }}>
                           <strong>{t.name}</strong>
                           <span className="row-sub">{t.skills}</span>
                         </button>
@@ -258,10 +327,24 @@ function ReviewScreen({ reports, technicians, askedId }) {
               {error && <p className="error">{error}</p>}
 
               <div className="assign-buttons">
-                {selected.status === 'waiting' && (
-                  <button type="button" className="btn btn-light" onClick={handleDecline}>Decline report</button>
+                {confirmDecline ? (
+                  <>
+                    <span className="row-sub">Decline and delete this report?</span>
+                    <button type="button" className="btn btn-light" disabled={saving} onClick={handleDecline}>
+                      Yes, decline
+                    </button>
+                    <button type="button" className="link-button" onClick={() => setConfirmDecline(false)}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="btn btn-light" disabled={saving} onClick={() => setConfirmDecline(true)}>
+                      Decline report
+                    </button>
+                    <button type="submit" className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                  </>
                 )}
-                <button type="submit" className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
               </div>
             </form>
           </div>

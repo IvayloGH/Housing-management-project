@@ -1,5 +1,5 @@
 // Small coloured dot with a label, e.g. "● Running low"
-// color: 'orange' | 'red' | 'green' | 'grey'
+// color: 'orange' | 'green' | 'grey'
 function StatusDot({ color, children }) {
   return (
     <span className="status">

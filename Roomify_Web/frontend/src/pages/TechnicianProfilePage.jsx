@@ -3,8 +3,9 @@ import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
 import { PersonalDetailsCard, SignInCard, LogoutCard } from '../components/ProfileCards.jsx'
-import { useApi } from '../api/useApi.js'
-import { getProfile, updateProfile } from '../api/roomify.js'
+import { useUser } from '../api/userContext.js'
+import { updateProfile } from '../api/roomify.js'
+import { rolePage } from '../api/convert.js'
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hours = ['06:00', '07:00', '08:00', '09:00', '10:00', '12:00', '14:00', '16:00', '17:00', '18:00', '20:00', '22:00']
@@ -14,38 +15,33 @@ const standardSkills = [
   'Carpentry', 'Locks & doors', 'Appliances', 'Painting',
 ]
 
-// Loads the profile first, then shows the page
-function TechnicianProfilePage() {
-  const { data, error } = useApi(getProfile)
-  if (!data) {
-    return (
-      <>
-        <PageHeader eyebrow="Technician · My profile" title="What you're good at." />
-        <div className="page-body">{error ? <p className="error">{error}</p> : <p className="row-sub">Loading…</p>}</div>
-      </>
-    )
-  }
-  return <TechnicianProfile profile={data} />
-}
+// The backend keeps the specialties as one text of max. 100 letters: "Plumbing, Small repairs"
+const MAX_SPECIALTY_LENGTH = 100
 
-function TechnicianProfile({ profile }) {
-  // The backend keeps the specialties as one text: "Plumbing, Small repairs"
-  const mySkills = profile.specialty ? profile.specialty.split(', ').filter(Boolean) : []
+function TechnicianProfilePage() {
+  const { user: profile, setUser } = useUser()
+  const mySkills = profile.specialty ? profile.specialty.split(',').map((s) => s.trim()).filter(Boolean) : []
   // Specialties: all options, and the ones that are chosen
   const [skillOptions, setSkillOptions] = useState([...standardSkills, ...mySkills.filter((s) => !standardSkills.includes(s))])
   const [skills, setSkills] = useState(mySkills)
   const [newSkill, setNewSkill] = useState('')
   const [skillsSaved, setSkillsSaved] = useState(false)
   const [skillsError, setSkillsError] = useState('')
+  const [savingSkills, setSavingSkills] = useState(false)
+  const specialtyText = skills.join(', ')
+  const tooLong = specialtyText.length > MAX_SPECIALTY_LENGTH
 
   async function saveSkills() {
     setSkillsError('')
+    setSavingSkills(true)
     try {
-      await updateProfile({ specialty: skills.join(', ') })
+      const updated = await updateProfile({ specialty: specialtyText })
+      setUser({ ...updated, role: rolePage(updated.role) })
       setSkillsSaved(true)
     } catch (err) {
       setSkillsError(err.message)
     }
+    setSavingSkills(false)
   }
 
   // When and where you work
@@ -55,13 +51,16 @@ function TechnicianProfile({ profile }) {
   const [cityOptions, setCityOptions] = useState(['Eindhoven', 'Veldhoven', 'Best', 'Helmond', 'Geldrop'])
   const [cities, setCities] = useState(['Eindhoven', 'Veldhoven'])
   const [newCity, setNewCity] = useState('')
-  const [saved, setSaved] = useState(false)
 
   // Adds your own specialty and chooses it straight away
   function addSkill(event) {
     event.preventDefault()
     const skill = newSkill.trim()
     if (skill === '') return
+    if (skill.includes(',')) {
+      setSkillsError('A specialty can\'t have a comma in it. Add them one by one.')
+      return
+    }
     if (!skillOptions.includes(skill)) setSkillOptions([...skillOptions, skill])
     if (!skills.includes(skill)) setSkills([...skills, skill])
     setSkillsSaved(false)
@@ -76,7 +75,6 @@ function TechnicianProfile({ profile }) {
     if (!cityOptions.includes(city)) setCityOptions([...cityOptions, city])
     if (!cities.includes(city)) setCities([...cities, city])
     setNewCity('')
-    setSaved(false)
   }
 
   return (
@@ -89,7 +87,7 @@ function TechnicianProfile({ profile }) {
       <div className="page-body stack">
         <section className="card">
           <h2>Your specialties</h2>
-          <p className="card-text-small">Pick everything you can fix. You only get jobs that match.</p>
+          <p className="card-text-small">Pick everything you can fix. The property manager sees this when choosing who to send.</p>
           <ChipGroup
             options={skillOptions}
             value={skills}
@@ -105,22 +103,33 @@ function TechnicianProfile({ profile }) {
             />
             <button type="submit" className="btn btn-small">Add</button>
           </form>
+          {tooLong && (
+            <p className="error">
+              Too many specialties to save ({specialtyText.length} of {MAX_SPECIALTY_LENGTH} letters). Remove one or two.
+            </p>
+          )}
           {skillsError && <p className="error">{skillsError}</p>}
           <div className="card-footer">
-            <button type="button" className="btn" onClick={saveSkills}>Save specialties</button>
+            <button type="button" className="btn" onClick={saveSkills} disabled={tooLong || savingSkills}>
+              {savingSkills ? 'Saving…' : 'Save specialties'}
+            </button>
             {skillsSaved && <span className="saved"><Icon name="check" /> Saved</span>}
           </div>
         </section>
 
         <section className="card">
           <h2>When and where you work</h2>
+          <p className="notice">
+            Roomify can't save your working days, hours and cities yet. You can look at them here,
+            but they are lost when you leave the page.
+          </p>
 
           <div className="field">
             <label>Days you are available</label>
             <ChipGroup
               options={weekDays}
               value={days}
-              onChange={(newDays) => { setDays(newDays); setSaved(false) }}
+              onChange={setDays}
               multiple
               size="chips-days"
             />
@@ -129,13 +138,13 @@ function TechnicianProfile({ profile }) {
           <div className="form-grid even narrow">
             <div className="field">
               <label htmlFor="from">From</label>
-              <select id="from" value={from} onChange={(e) => { setFrom(e.target.value); setSaved(false) }}>
+              <select id="from" value={from} onChange={(e) => setFrom(e.target.value)}>
                 {hours.map((h) => <option key={h}>{h}</option>)}
               </select>
             </div>
             <div className="field">
               <label htmlFor="until">Until</label>
-              <select id="until" value={until} onChange={(e) => { setUntil(e.target.value); setSaved(false) }}>
+              <select id="until" value={until} onChange={(e) => setUntil(e.target.value)}>
                 {hours.map((h) => <option key={h}>{h}</option>)}
               </select>
             </div>
@@ -146,7 +155,7 @@ function TechnicianProfile({ profile }) {
             <ChipGroup
               options={cityOptions}
               value={cities}
-              onChange={(newCities) => { setCities(newCities); setSaved(false) }}
+              onChange={setCities}
               multiple
             />
           </div>
@@ -159,11 +168,6 @@ function TechnicianProfile({ profile }) {
             />
             <button type="submit" className="btn btn-small">Add place</button>
           </form>
-
-          <div className="card-footer">
-            <button type="button" className="btn" onClick={() => setSaved(true)}>Save profile</button>
-            {saved && <span className="saved"><Icon name="check" /> Saved</span>}
-          </div>
         </section>
 
         <PersonalDetailsCard title="Account" />

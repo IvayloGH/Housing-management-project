@@ -3,25 +3,28 @@ import PageHeader from '../components/PageHeader.jsx'
 import StatCard from '../components/StatCard.jsx'
 import Icon from '../components/Icon.jsx'
 import PhotoView from '../components/PhotoView.jsx'
-import technicianPhoto from '../assets/photos/technician-jobs.jpg'
+import technicianPhoto from '../assets/building.jpg'
 import { useApi } from '../api/useApi.js'
-import { getMyJobs, getProfile, setJobStatus } from '../api/roomify.js'
+import { useUser } from '../api/userContext.js'
+import { getMyJobs, setJobStatus } from '../api/roomify.js'
 import { firstName, jobStatusCode, toJob } from '../api/convert.js'
+import { longDayText } from '../utils/dates.js'
 
 async function loadJobs() {
-  const [profile, tickets] = await Promise.all([getProfile(), getMyJobs()])
-  return { name: firstName(profile.name), jobs: tickets.filter((t) => t.status !== 'RESOLVED').map(toJob) }
+  const tickets = await getMyJobs()
+  return { jobs: tickets.filter((t) => t.status !== 'RESOLVED').map(toJob) }
 }
-
-const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
 // Loads the jobs first, then shows the table
 function TechnicianPage() {
+  const { user } = useUser()
   const { data, error } = useApi(loadJobs)
+  // Worked out on every visit, so it is right even when the tab stays open overnight
+  const today = longDayText(new Date())
   return (
     <>
       <PageHeader
-        eyebrow={`Technician · ${data ? data.name : ''} · ${today}`}
+        eyebrow={`Technician · ${firstName(user.name)} · ${today}`}
         title="Your repair jobs."
         titleMuted="Accept, plan and update them here."
         image={technicianPhoto}
@@ -42,6 +45,7 @@ function JobsTable({ startJobs }) {
   const [openJobId, setOpenJobId] = useState(null)
   // The job that was just saved, to show "Saved" next to it
   const [savedJobId, setSavedJobId] = useState(null)
+  const [savingJobId, setSavingJobId] = useState(null)
   const [error, setError] = useState('')
 
   const newCount = jobs.filter((j) => j.status === 'New').length
@@ -53,6 +57,7 @@ function JobsTable({ startJobs }) {
 
   async function save(job) {
     setError('')
+    setSavingJobId(job.id)
     try {
       if (job.status !== savedStatus[job.id] && job.status !== 'New') {
         await setJobStatus(job.id, jobStatusCode[job.status])
@@ -62,6 +67,7 @@ function JobsTable({ startJobs }) {
     } catch (err) {
       setError(err.message)
     }
+    setSavingJobId(null)
   }
 
   function toggleDetails(id) {
@@ -80,7 +86,7 @@ function JobsTable({ startJobs }) {
       <div className="grid-3">
         <StatCard color="grey" label="All requests" number={jobs.length} />
         <StatCard color="orange" label="New requests" number={newCount} />
-        <StatCard color="green" label="Accepted by you" number={jobs.length - newCount} />
+        <StatCard color="green" label="Started" number={jobs.length - newCount} />
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -97,7 +103,7 @@ function JobsTable({ startJobs }) {
               <tr>
                 <th>Job</th>
                 <th>Urgency</th>
-                <th>From the manager</th>
+                <th>Newest note</th>
                 <th>Status</th>
                 <th />
               </tr>
@@ -128,7 +134,13 @@ function JobsTable({ startJobs }) {
                       {savedJobId === job.id ? (
                         <span className="saved"><Icon name="check" /> Saved</span>
                       ) : (
-                        <button className="btn btn-light btn-small" onClick={() => save(job)}>Save</button>
+                        <button
+                          className="btn btn-light btn-small"
+                          disabled={savingJobId !== null}
+                          onClick={() => save(job)}
+                        >
+                          {savingJobId === job.id ? 'Saving…' : 'Save'}
+                        </button>
                       )}
                     </td>
                   </tr>

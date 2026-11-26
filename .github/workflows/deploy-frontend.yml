@@ -1,0 +1,50 @@
+name: Deploy frontend to Azure Storage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Roomify_Web/frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Roomify_Web/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: Roomify_Web/frontend/package-lock.json
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_URL: https://student-housing-api-hffpfmcdbhe0b0b4.belgiumcentral-01.azurewebsites.net
+
+      - name: Upload to $web
+        run: |
+          az storage blob upload-batch \
+            --account-name studenthousingpwa \
+            --account-key "${{ secrets.AZURE_STORAGE_KEY }}" \
+            --destination '$web' \
+            --source dist \
+            --overwrite
+          az storage blob upload \
+            --account-name studenthousingpwa \
+            --account-key "${{ secrets.AZURE_STORAGE_KEY }}" \
+            --container-name '$web' \
+            --name index.html \
+            --file dist/index.html \
+            --content-type "text/html" \
+            --content-cache-control "no-cache" \
+            --overwrite

@@ -1,25 +1,27 @@
-// Login, register and password functions.
+// Login, register and logout.
 // Login and register ask the backend (POST /auth/login, POST /auth/register).
-// Face login asks the backend too (POST /auth/face/login).
-// Forgot password is NOT connected yet: it waits for Eszter's security work.
+// Face login asks the backend too (POST /auth/face/login), but is switched off in config.js for now.
+// Forgot password is NOT available yet: there is no backend for it (see ForgotPasswordPage.jsx).
 import { api, clearToken, saveToken } from './client.js'
 import { rolePage } from './convert.js'
 
-// Who is logged in. role is the page name: 'tenant', 'manager' or 'technician'
-async function whoAmI() {
-  const user = await api('/auth/me')
+// Who is logged in: the full profile (GET /users/me).
+// role is the page name: 'tenant', 'manager' or 'technician'
+export async function whoAmI() {
+  const user = await api('/users/me')
   return { ...user, role: rolePage(user.role) }
 }
 
 // Log in with email and password. Gives back the user, or throws an error.
 export async function login(email, password) {
-  const answer = await api('/auth/login', { method: 'POST', body: { email, password } })
+  const answer = await api('/auth/login', { method: 'POST', body: { email: email.trim(), password } })
   saveToken(answer.access_token)
   return whoAmI()
 }
 
-// Create a new account and log in straight away.
+// Create a new tenant account and log in straight away.
 // Tenants join their house by its address (street + city must match a house in Roomify).
+// Managers and technicians can't sign up themselves (backend/create_account.py makes them).
 export async function register(newUser) {
   if (newUser.password.length < 8) {
     throw new Error('Your password needs at least 8 characters')
@@ -27,13 +29,13 @@ export async function register(newUser) {
   const answer = await api('/auth/register', {
     method: 'POST',
     body: {
-      name: newUser.name,
-      email: newUser.email,
+      name: newUser.name.trim(),
+      email: newUser.email.trim(),
       password: newUser.password,
-      role: newUser.role === 'manager' ? 'property_manager' : newUser.role,
-      street: newUser.street || null,
-      city: newUser.city || null,
-      room_number: newUser.room || null,
+      role: 'tenant',
+      street: newUser.street.trim() || null,
+      city: newUser.city.trim() || null,
+      room_number: newUser.room.trim() || null,
     },
   })
   saveToken(answer.access_token)
@@ -42,31 +44,6 @@ export async function register(newUser) {
 
 export function logout() {
   clearToken()
-}
-
-// Waits a moment, so the fake functions below feel like a real server.
-// "await wait(1000)" means: wait 1 second, then go on.
-function wait(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
-// Forgot password, step 1. Later: the backend sends an email with a reset link.
-// We always say "sent", so nobody can find out which emails have an account.
-export async function requestPasswordReset() {
-  await wait(1000)
-}
-
-// Forgot password, step 2. Later: the backend compares the camera photo with the saved face.
-export async function verifyFace() {
-  await wait(2000)
-}
-
-// Forgot password, step 3: save the new password. Not connected yet (needs Eszter's part).
-export async function resetPassword(email, newPassword) {
-  await wait(800)
-  if (newPassword.length < 8) {
-    throw new Error('Your password needs at least 8 characters')
-  }
 }
 
 // Log in with only your face: the backend finds out who is in the photo.

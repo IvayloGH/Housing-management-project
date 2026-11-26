@@ -1,22 +1,32 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, Navigate } from 'react-router'
 import { login } from '../api/auth.js'
+import { useUser } from '../api/userContext.js'
+import { FACE_LOGIN_ENABLED } from '../config.js'
 import Logo from '../components/Logo.jsx'
 
 function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const { user, setUser } = useUser()
+
+  // Already logged in: go straight to your own home page
+  if (user) {
+    return <Navigate to={'/' + user.role} replace />
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    setBusy(true)
     try {
-      const user = await login(email, password)
-      navigate('/' + user.role)
+      // Saving the user makes this page go to the user's home page (see above)
+      setUser(await login(email, password))
     } catch (err) {
       setError(err.message)
+      setBusy(false)
     }
   }
 
@@ -60,13 +70,19 @@ function LoginPage() {
 
         {error && <p className="error">{error}</p>}
 
-        <button type="submit" className="btn btn-full">Sign in</button>
+        <button type="submit" className="btn btn-full" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
 
-        <div className="divider">or</div>
-
-        <Link to="/face-login" className="btn btn-light btn-full">
-          Log in with face recognition
-        </Link>
+        {/* Hidden until face login works in the backend (see config.js) */}
+        {FACE_LOGIN_ENABLED && (
+          <>
+            <div className="divider">or</div>
+            <Link to="/face-login" className="btn btn-light btn-full">
+              Log in with face recognition
+            </Link>
+          </>
+        )}
 
         <p className="login-footer">
           New here? <Link to="/register">Create an account</Link>

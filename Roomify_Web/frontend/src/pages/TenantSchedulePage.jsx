@@ -2,9 +2,10 @@ import { useState } from 'react'
 import PageHeader from '../components/PageHeader.jsx'
 import ChipGroup from '../components/ChipGroup.jsx'
 import Icon from '../components/Icon.jsx'
-import { dateText, todayText } from '../utils/dateText.js'
+import { dateText, longDayText, todayText } from '../utils/dates.js'
 import { useApi } from '../api/useApi.js'
-import { addChore, getHousemates, getProfile, getSchedule } from '../api/roomify.js'
+import { useUser } from '../api/userContext.js'
+import { addChore, getHousemates, getSchedule, markChoreDone } from '../api/roomify.js'
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const monthNames = [
@@ -17,11 +18,17 @@ const repeatOptions = { Once: 'ONCE', 'Every week': 'WEEKLY', 'Every 2 weeks': '
 const statusLabel = { done: 'Done', notDone: 'Not done', planned: 'Planned' }
 const statusFromBackend = { DONE: 'done', MISSED: 'notDone', PLANNED: 'planned' }
 
-// The backend's list of chores, stored per day: { "2026-11-15": [ {task, who, status}, ... ] }
+// The backend's list of chores, stored per day: { "2026-11-15": [ {id, task, who, mine, status}, ... ] }
 function perDay(entries) {
   const schedule = {}
   for (const e of entries) {
-    const chore = { task: e.chore_title, who: e.is_mine ? 'You' : e.tenant_name, status: statusFromBackend[e.status] }
+    const chore = {
+      id: e.assignment_id,
+      task: e.chore_title,
+      who: e.is_mine ? 'You' : e.tenant_name,
+      mine: e.is_mine,
+      status: statusFromBackend[e.status],
+    }
     schedule[e.due_date] = [...(schedule[e.due_date] || []), chore]
   }
   return schedule
@@ -35,13 +42,17 @@ function TenantSchedulePage() {
   // The day that is selected in the calendar (its chores are listed under it)
   const [selectedDay, setSelectedDay] = useState(now.getDate())
   const [message, setMessage] = useState('')
+  const [actionError, setActionError] = useState('')
+  // The chore that is being marked as done right now
+  const [markingId, setMarkingId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   // The chores of this month: loaded again when the month changes
   const monthData = useApi(() => getSchedule(year, month), [year, month])
-  const houseData = useApi(() => Promise.all([getProfile(), getHousemates()]))
+  const houseData = useApi(getHousemates)
+  const { user: profile } = useUser()
   const schedule = monthData.data ? perDay(monthData.data) : {}
-  const profile = houseData.data ? houseData.data[0] : null
-  const housemates = houseData.data ? houseData.data[1] : []
+  const housemates = houseData.data || []
 
   // The "Add a chore" form
   const [formOpen, setFormOpen] = useState(false)
@@ -101,13 +112,33 @@ function TenantSchedulePage() {
     setFormOpen(true)
   }
 
+  // "Mark as done" in the list of the selected day (only your own chores)
+  async function markDone(chore) {
+    setActionError('')
+    setMessage('')
+    setMarkingId(chore.id)
+    try {
+      await markChoreDone(chore.id)
+      setMessage(chore.task + ' is done. Thanks!')
+      monthData.reload()
+    } catch (err) {
+      setActionError(err.message)
+    }
+    setMarkingId(null)
+  }
+
   async function handleAddChore(event) {
     event.preventDefault()
     if (task.trim() === '') {
       setFormError('Pick or type a chore.')
       return
     }
+    if (!who) {
+      setFormError('Choose who does it.')
+      return
+    }
 
+    setSaving(true)
     try {
       const added = await addChore({
         title: task.trim(),
@@ -134,18 +165,21 @@ function TenantSchedulePage() {
     } catch (err) {
       setFormError(err.message)
     }
+    setSaving(false)
   }
 
   return (
     <>
       <PageHeader
-        eyebrow={`Tenant · Cleaning schedule${profile ? ' · ' + profile.house_name : ''}`}
+        eyebrow={`Tenant · Cleaning schedule${profile.house_name ? ' · ' + profile.house_name : ''}`}
         title="Cleaning schedule."
         titleMuted="Everyone's chores for the month."
       />
 
       <div className="page-body">
-        {(monthData.error || houseData.error) && <p className="error">{monthData.error || houseData.error}</p>}
+        {(monthData.error || houseData.error || actionError) && (
+          <p className="error">{monthData.error || houseData.error || actionError}</p>
+        )}
         {message && <p className="saved message"><Icon name="check" /> {message}</p>}
 
         {/* ---------- Add a chore ---------- */}
@@ -172,6 +206,7 @@ function TenantSchedulePage() {
               <div className="field">
                 <label htmlFor="who">Who does it?</label>
                 <select id="who" value={who} onChange={(e) => setWho(e.target.value)}>
+                  <option value="" disabled>{housemates.length === 0 ? 'Loading…' : 'Choose someone'}</option>
                   {housemates.map((h) => (
                     <option key={h.user_id} value={h.user_id}>{h.is_me ? 'You' : h.name}</option>
                   ))}
@@ -198,7 +233,9 @@ function TenantSchedulePage() {
             {formError && <p className="error">{formError}</p>}
 
             <div>
-              <button type="submit" className="btn">Add chore</button>
+              <button type="submit" className="btn" disabled={saving || housemates.length === 0}>
+                {saving ? 'Adding…' : 'Add chore'}
+              </button>
             </div>
           </form>
         )}
@@ -247,7 +284,7 @@ function TenantSchedulePage() {
                   <span className="mcal-number">{day}</span>
                   {/* Show the first 2 chores in the day, and "+1" etc. for the rest */}
                   {chores.slice(0, 2).map((c, i) => (
-                    <span key={i} className={'mcal-chip mcal-' + c.status + (c.who === 'You' ? ' mine' : '')}>
+                    <span key={i} className={'mcal-chip mcal-' + c.status + (c.mine ? ' mine' : '')}>
                       {c.task}
                     </span>
                   ))}
@@ -261,7 +298,7 @@ function TenantSchedulePage() {
           <div className="mcal-list">
             <div className="mcal-list-head">
               <h3>
-                {new Date(year, month - 1, selectedDay).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                {longDayText(new Date(year, month - 1, selectedDay))}
               </h3>
               <button className="mcal-add" onClick={openForm} aria-label="Add a chore on this day">
                 <Icon name="plus" size={20} />
@@ -272,13 +309,24 @@ function TenantSchedulePage() {
               <p className="mcal-empty">No chores on this day.</p>
             ) : (
               <ul>
-                {choresOfSelectedDay.map((chore, i) => (
-                  <li key={i} className={'mcal-event mcal-' + chore.status + (chore.who === 'You' ? ' mine' : '')}>
+                {choresOfSelectedDay.map((chore) => (
+                  <li key={chore.id} className={'mcal-event mcal-' + chore.status + (chore.mine ? ' mine' : '')}>
                     <div>
                       <strong>{chore.task}</strong>
                       <span>{chore.who}</span>
                     </div>
-                    <span className="mcal-status">{statusLabel[chore.status]}</span>
+                    <span className="row-actions">
+                      {chore.mine && chore.status !== 'done' && (
+                        <button
+                          className="btn btn-small"
+                          disabled={markingId !== null}
+                          onClick={() => markDone(chore)}
+                        >
+                          {markingId === chore.id ? 'Saving…' : 'Mark as done'}
+                        </button>
+                      )}
+                      <span className="mcal-status">{statusLabel[chore.status]}</span>
+                    </span>
                   </li>
                 ))}
               </ul>
