@@ -5,11 +5,47 @@ import housesPhoto from '../assets/building.jpg'
 import { useApi } from '../api/useApi.js'
 import { addHouse, editHouse, getHouses, getHouseTenants, getTeam, removeTenant } from '../api/roomify.js'
 
-const emptyHouse = { street: '', city: '', rooms: '' }
+const emptyHouse = { street: '', city: '', rooms: [] }
 
-// "Kitchen, Bathroom 1 , " -> ['Kitchen', 'Bathroom 1']
-function roomList(text) {
-  return text.split(',').map((r) => r.trim()).filter((r) => r !== '')
+// Rooms are added one at a time: type a room, press Add (or Enter),
+// and it shows up as a chip with a cross to take it out again.
+function RoomsInput({ id, rooms, onChange }) {
+  const [text, setText] = useState('')
+
+  function addRoom() {
+    const room = text.trim()
+    if (room === '') return
+    const alreadyThere = rooms.some((r) => r.toLowerCase() === room.toLowerCase())
+    if (!alreadyThere) onChange([...rooms, room])
+    setText('')
+  }
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>Rooms <span className="optional">type a room and press Add</span></label>
+      <div className="room-add">
+        <input id={id} placeholder="e.g. Kitchen" value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addRoom() }
+          }} />
+        <button type="button" className="btn btn-small" onClick={addRoom} disabled={text.trim() === ''}>Add</button>
+      </div>
+      {rooms.length > 0 && (
+        <div className="chips room-chips">
+          {rooms.map((room) => (
+            <span className="chip" key={room}>
+              {room}
+              <button type="button" className="room-remove" aria-label={'Remove ' + room} title="Remove"
+                onClick={() => onChange(rooms.filter((r) => r !== room))}>
+                <Icon name="cross" size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // The backend keeps name = street and address = "street, city"
@@ -80,7 +116,7 @@ function ManagerHousesPage() {
 
   function startEdit(house) {
     setEditingId(house.id)
-    setEditForm({ street: house.street, city: house.city, rooms: house.rooms.join(', ') })
+    setEditForm({ street: house.street, city: house.city, rooms: house.rooms })
     setHouseError('')
     loadTenants(house.id)
   }
@@ -101,7 +137,7 @@ function ManagerHousesPage() {
     event.preventDefault()
     setSaving(true)
     try {
-      await editHouse(editingId, editForm.street.trim(), editForm.city.trim(), roomList(editForm.rooms))
+      await editHouse(editingId, editForm.street.trim(), editForm.city.trim(), editForm.rooms)
       setEditingId(null)
       setHouseError('')
       reload()
@@ -119,7 +155,7 @@ function ManagerHousesPage() {
     }
     setSaving(true)
     try {
-      await addHouse(newHouse.street.trim(), newHouse.city.trim(), roomList(newHouse.rooms))
+      await addHouse(newHouse.street.trim(), newHouse.city.trim(), newHouse.rooms)
       setNewHouse(emptyHouse)
       setHouseError('')
       reload()
@@ -163,11 +199,8 @@ function ManagerHousesPage() {
                       onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} required />
                   </div>
                 </div>
-                <div className="field">
-                  <label htmlFor="edit-rooms">Rooms <span className="optional">separate with commas</span></label>
-                  <input id="edit-rooms" placeholder="e.g. Kitchen, Bathroom 1, Hallway, Living room" value={editForm.rooms}
-                    onChange={(e) => setEditForm({ ...editForm, rooms: e.target.value })} />
-                </div>
+                <RoomsInput id="edit-rooms" rooms={editForm.rooms}
+                  onChange={(rooms) => setEditForm({ ...editForm, rooms })} />
                 {houseError && <p className="error">{houseError}</p>}
                 <div className="button-row">
                   <button type="submit" className="btn btn-small" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
@@ -240,11 +273,8 @@ function ManagerHousesPage() {
                   onChange={(e) => setNewHouse({ ...newHouse, city: e.target.value })} />
               </div>
             </div>
-            <div className="field">
-              <label htmlFor="new-rooms">Rooms <span className="optional">separate with commas</span></label>
-              <input id="new-rooms" placeholder="e.g. Kitchen, Bathroom 1, Hallway, Living room" value={newHouse.rooms}
-                onChange={(e) => setNewHouse({ ...newHouse, rooms: e.target.value })} />
-            </div>
+            <RoomsInput id="new-rooms" rooms={newHouse.rooms}
+              onChange={(rooms) => setNewHouse({ ...newHouse, rooms })} />
             <p className="row-sub">Tenants join this house by filling in the same street and city when they sign up.</p>
             {houseError && editingId === null && <p className="error">{houseError}</p>}
             <div>

@@ -5,6 +5,7 @@ import { register } from '../api/auth.js'
 import { useUser } from '../api/userContext.js'
 import Logo from '../components/Logo.jsx'
 import PageHeader from '../components/PageHeader.jsx'
+import { FACE_LOGIN_ENABLED } from '../config.js'
 
 // The three roles you can choose from
 const roles = [
@@ -58,7 +59,7 @@ function RegisterPage() {
       })
 
       // NEW: Choose where to go after creating the account
-      const destination = enableFaceLogin
+      const destination = FACE_LOGIN_ENABLED && enableFaceLogin
         ? '/face-setup'
         : '/' + newUser.role
 
@@ -162,8 +163,8 @@ function RegisterPage() {
           </section>
         )}
 
-        {/* NEW: Optional face recognition */}
-        {role === 'tenant' && (
+        {/* Optional face recognition for every role, hidden until it works in the backend (see config.js) */}
+        {FACE_LOGIN_ENABLED && (
           <section className="card">
             <h2>Face Login</h2>
             <p>

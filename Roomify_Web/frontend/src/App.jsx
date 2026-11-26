@@ -46,15 +46,15 @@ function App() {
           AppLayout sends people who are not logged in to the login page,
           RequireRole sends people with another role to their own pages. */}
       <Route element={<AppLayout />}>
+        {/* Optional face registration after creating an account: open to every role */}
+        <Route path="/face-setup" element={<FaceSetupPage />} />
+
         <Route element={<RequireRole role="tenant" />}>
           <Route path="/tenant" element={<TenantPage />} />
           <Route path="/tenant/schedule" element={<TenantSchedulePage />} />
           <Route path="/tenant/groceries" element={<TenantGroceriesPage />} />
           <Route path="/tenant/report" element={<TenantReportPage />} />
           <Route path="/tenant/profile" element={<TenantProfilePage />} />
-
-          {/* NEW: Optional face registration after creating an account */}
-          <Route path="/face-setup" element={<FaceSetupPage />} />
         </Route>
 
         <Route element={<RequireRole role="manager" />}>
