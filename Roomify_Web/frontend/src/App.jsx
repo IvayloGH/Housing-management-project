@@ -1,3 +1,4 @@
+
 import { Navigate, Routes, Route } from 'react-router'
 import AppLayout from './components/AppLayout.jsx'
 import RequireRole from './components/RequireRole.jsx'
@@ -5,6 +6,9 @@ import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx'
 import FaceLoginPage from './pages/FaceLoginPage.jsx'
+
+// NEW: Face registration page
+import FaceSetupPage from './pages/FaceSetupPage.jsx'
 
 import TenantPage from './pages/TenantPage.jsx'
 import TenantSchedulePage from './pages/TenantSchedulePage.jsx'
@@ -30,6 +34,14 @@ function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/face-login" element={<FaceLoginPage />} />
 
+      {/* NEW: Face Setup preview - development only */}
+      {import.meta.env.DEV && (
+        <Route
+          path="/face-setup-preview"
+          element={<FaceSetupPage preview />}
+        />
+      )}
+
       {/* All pages inside AppLayout get the Roomify header and menu.
           AppLayout sends people who are not logged in to the login page,
           RequireRole sends people with another role to their own pages. */}
@@ -40,6 +52,9 @@ function App() {
           <Route path="/tenant/groceries" element={<TenantGroceriesPage />} />
           <Route path="/tenant/report" element={<TenantReportPage />} />
           <Route path="/tenant/profile" element={<TenantProfilePage />} />
+
+          {/* NEW: Optional face registration after creating an account */}
+          <Route path="/face-setup" element={<FaceSetupPage />} />
         </Route>
 
         <Route element={<RequireRole role="manager" />}>

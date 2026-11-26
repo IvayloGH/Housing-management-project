@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { Navigate } from 'react-router'
 import { register } from '../api/auth.js'
@@ -22,9 +23,19 @@ function RegisterPage() {
   const [room, setRoom] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // NEW: Optional face login setup
+  const [enableFaceLogin, setEnableFaceLogin] = useState(false)
+  const [redirectAfterRegistration, setRedirectAfterRegistration] = useState(null)
+
   const { user, setUser } = useUser()
 
-  // Logged in (also right after creating the account): go to your home page
+  // NEW: After registration, follow the selected destination
+  if (redirectAfterRegistration) {
+    return <Navigate to={redirectAfterRegistration} replace />
+  }
+
+  // Logged in: go to your home page
   if (user) {
     return <Navigate to={'/' + user.role} replace />
   }
@@ -33,9 +44,27 @@ function RegisterPage() {
     event.preventDefault()
     setError('')
     setBusy(true)
+
     try {
-      // A house is found by its street + city. Only tenants can sign up themselves.
-      setUser(await register({ name, email, password, street, city, room }))
+      // A house is found by its street + city.
+      // Only tenants can sign up themselves.
+      const newUser = await register({
+        name,
+        email,
+        password,
+        street,
+        city,
+        room
+      })
+
+      // NEW: Choose where to go after creating the account
+      const destination = enableFaceLogin
+        ? '/face-setup'
+        : '/' + newUser.role
+
+      setRedirectAfterRegistration(destination)
+      setUser(newUser)
+
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -82,28 +111,31 @@ function RegisterPage() {
         )}
 
         {role === 'tenant' && (
-        <section className="card">
-          <h2>Your account</h2>
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="name">Full name</label>
-              <input id="name" placeholder="Your full name" value={name}
-                onChange={(e) => setName(e.target.value)} required />
+          <section className="card">
+            <h2>Your account</h2>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="name">Full name</label>
+                <input id="name" placeholder="Your full name" value={name}
+                  onChange={(e) => setName(e.target.value)} required />
+              </div>
+
+              {/* Empty box, so Email starts on a new line */}
+              <div />
+
+              <div className="field">
+                <label htmlFor="email">Email</label>
+                <input id="email" type="email" placeholder="name@example.com" value={email}
+                  onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+
+              <div className="field">
+                <label htmlFor="password">Password</label>
+                <input id="password" type="password" placeholder="At least 8 characters" value={password}
+                  onChange={(e) => setPassword(e.target.value)} required />
+              </div>
             </div>
-            {/* Empty box, so Email starts on a new line */}
-            <div />
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" placeholder="name@example.com" value={email}
-                onChange={(e) => setEmail(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input id="password" type="password" placeholder="At least 8 characters" value={password}
-                onChange={(e) => setPassword(e.target.value)} required />
-            </div>
-          </div>
-        </section>
+          </section>
         )}
 
         {/* Only tenants live in a house, so only they fill in an address */}
@@ -126,6 +158,39 @@ function RegisterPage() {
                 <input id="room" placeholder="e.g. 06" value={room}
                   onChange={(e) => setRoom(e.target.value)} required />
               </div>
+            </div>
+          </section>
+        )}
+
+        {/* NEW: Optional face recognition */}
+        {role === 'tenant' && (
+          <section className="card">
+            <h2>Face Login</h2>
+            <p>
+              Would you like to use facial recognition to log in?
+              You can also enable it later.
+            </p>
+
+            <div className="role-options">
+              <label
+                className={
+                  enableFaceLogin
+                    ? 'role-option selected'
+                    : 'role-option'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={enableFaceLogin}
+                  onChange={(e) => setEnableFaceLogin(e.target.checked)}
+                />
+
+                <strong>Enable Face Login</strong>
+
+                <span>
+                  Set up facial recognition after creating your account.
+                </span>
+              </label>
             </div>
           </section>
         )}

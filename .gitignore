@@ -1,5 +1,22 @@
+# Node.js
 node_modules/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Environment variables and credentials
+.env
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Temporary files
 ~$*
 .DS_Store
-# Ignore old local backend folder
+
+# Old backend folder (local only)
 /backend/
