@@ -119,9 +119,12 @@ function JobsTable({ startJobs }) {
                         {job.title}
                       </strong>
                       <p className="row-sub">{job.place} · Reported {job.reported}</p>
-                      <button className="link-button" onClick={() => toggleDetails(job.id)}>
-                        {openJobId === job.id ? 'Hide details' : 'See photo and details'}
-                      </button>
+                      {/* Only shown when the tenant added a photo */}
+                      {job.photo && (
+                        <button className="link-button" onClick={() => toggleDetails(job.id)}>
+                          {openJobId === job.id ? 'Hide photo' : 'See photo'}
+                        </button>
+                      )}
                     </td>
                     <td><span className={'urgency urgency-' + job.urgency.toLowerCase()}>{job.urgency}</span></td>
                     <td className="muted">{job.note || '-'}</td>
@@ -145,13 +148,12 @@ function JobsTable({ startJobs }) {
                     </td>
                   </tr>
 
-                  {/* The extra row with the photo and description, when "See photo and details" is clicked */}
-                  {openJobId === job.id && (
+                  {/* The extra row with the photo, when "See photo" is clicked */}
+                  {openJobId === job.id && job.photo && (
                     <tr className="details-row">
                       <td colSpan="5">
                         <div className="job-details">
                           <PhotoView src={job.photo} alt={'Photo of: ' + job.title} size="small" />
-                          <p>{job.description}</p>
                         </div>
                       </td>
                     </tr>

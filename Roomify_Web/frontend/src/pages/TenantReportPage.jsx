@@ -170,7 +170,7 @@ function TenantReportPage() {
             <div className="step-row">
               <span className="step-number">3</span>
               <div>
-                <h3>Add a photo <span className="optional">(optional, jpg, png or webp, max 5 MB)</span></h3>
+                <h3>Add a photo</h3>
                 <span className="row-actions">
                   <label className="btn btn-light btn-small file-button">
                     <Icon name="camera" /> {photo ? 'Choose another photo' : 'Take or upload a photo'}
