@@ -41,6 +41,14 @@ function ManagerHousesPage() {
   const [editForm, setEditForm] = useState(emptyHouse)
   const [newHouse, setNewHouse] = useState(emptyHouse)
   const [houseError, setHouseError] = useState('')
+  const [saving, setSaving] = useState(false)
+  // The houses whose tenant list is open
+  const [openTenants, setOpenTenants] = useState([])
+
+  function toggleTenants(id) {
+    setOpenTenants(openTenants.includes(id) ? openTenants.filter((h) => h !== id) : [...openTenants, id])
+  }
+
   // The tenants of the house you are editing (null while loading)
   const [tenants, setTenants] = useState(null)
   const [tenantsError, setTenantsError] = useState('')
@@ -154,7 +162,7 @@ function ManagerHousesPage() {
                 </div>
 
                 {/* Who lives here. The red cross takes someone out of the house (after "Are you sure?") */}
-                <div className="tenant-list">
+                <div className="edit-tenants">
                   <strong>Tenants</strong>
                   {tenantsError && <p className="error">{tenantsError}</p>}
                   {tenants && tenants.length === 0 && <p className="row-sub">Nobody lives here yet.</p>}

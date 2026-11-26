@@ -2222,8 +2222,54 @@ textarea {
 /* Face login: consent before the camera opens */
 .consent { display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 0.75rem; font-size: 0.9rem; }
 
-/* Manager: tenants of the house being edited, with a red cross to remove someone */
+/* ---------- Added in the frontend fixes (25 Nov 2026) ---------- */
+
+/* Loading / error box when a page can't be shown yet */
+.page-message {
+  padding: 32px 24px;
+}
+
+/* A light box that explains something is not ready yet */
+.notice {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--orange);
+  border-radius: 4px;
+  background: #fbf4e6;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* Several small buttons next to each other in a list row */
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* A checkbox with its text, e.g. "Show fixed reports" */
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* The tenants of one house, under the house on the manager page */
 .tenant-list {
+  margin: 8px 0 4px 44px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.tenant-list li {
+  padding: 4px 0;
+}
+
+/* Manager: tenants of the house being edited, with a red cross to remove someone */
+.edit-tenants {
   display: flex;
   flex-direction: column;
   gap: 4px;
