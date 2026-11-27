@@ -68,16 +68,18 @@ function ManagerPage() {
         <section className="card">
           <div className="card-head">
             <h2>{showFixed ? 'All reports' : 'Open reports'}</h2>
-            <label className="check-label">
-              <input type="checkbox" checked={showFixed} onChange={(e) => setShowFixed(e.target.checked)} />
-              Show fixed reports
-            </label>
+            {/* Only when there are fixed reports to add */}
+            {inHouse.length > openReports.length && (
+              <button className="link-button" onClick={() => setShowFixed(!showFixed)}>
+                {showFixed ? 'Show less' : 'View all reports'}
+              </button>
+            )}
           </div>
           {data && shownReports.length === 0 && (
             <p className="row-sub">{showFixed ? 'No reports yet.' : 'No open reports. Everything is fixed.'}</p>
           )}
           <div className="table-wrap">
-            {/* Fixed column widths, so the columns don't jump when "Show fixed reports" adds rows */}
+            {/* Fixed column widths, so the columns don't jump when "View all reports" adds rows */}
             <table className="table table-fixed">
               <colgroup>
                 <col style={{ width: '10%' }} />
