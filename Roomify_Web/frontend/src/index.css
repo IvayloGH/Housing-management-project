@@ -2526,3 +2526,16 @@ textarea {
     mask-image: linear-gradient(to right, transparent 0%, transparent 40%, rgba(0, 0, 0, 0.3) 100%);
   }
 }
+
+/* =========================================================
+   Headers: a soft darker green fades in on the right
+   ========================================================= */
+.page-header:not(.has-photo) {
+  background: linear-gradient(to right, var(--green-bg) 0%, var(--green-bg) 50%, #e3f0d8 58%, #d2e6c2 100%);
+}
+
+@media (max-width: 760px) {
+  .page-header:not(.has-photo) {
+    background: linear-gradient(to right, var(--green-bg) 0%, var(--green-bg) 60%, #dcebcf 100%);
+  }
+}
