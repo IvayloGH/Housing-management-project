@@ -2,40 +2,34 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useUser } from '../api/userContext.js'
-import { API_URL } from '../api/client.js'
+import { api, hasToken } from '../api/client.js'
 import FaceCamera from '../components/FaceCamera.jsx'
 
-// NEW: Optional preview mode for local development
 function FaceSetupPage({ preview = false }) {
   const [consent, setConsent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-
-  // NEW: Preview feedback
   const [previewMessage, setPreviewMessage] = useState('')
 
   const navigate = useNavigate()
   const { user } = useUser()
 
-  // Continue to the user's normal homepage
   function continueToHome() {
-    // NEW: Preview mode returns to the register page
     if (preview) {
       navigate('/register', { replace: true })
       return
     }
 
-    navigate('/' + user.role, { replace: true })
+    navigate(user ? '/' + user.role : '/', { replace: true })
   }
 
-  // Receive the photo captured by FaceCamera
   async function handleRegisterFace(photo) {
     setError('')
     setPreviewMessage('')
 
     if (!consent) {
-      setError('Please give your consent before registering your face.')
+      setError('Please give your consent before continuing.')
       return
     }
 
@@ -44,79 +38,194 @@ function FaceSetupPage({ preview = false }) {
       return
     }
 
-    // NEW: Test photo capture without contacting the backend
+    // Preview mode: only test the camera.
+    // No photo is sent to the backend or saved.
     if (preview) {
       setPreviewMessage(
-        'Photo captured successfully! Preview mode: nothing was sent or saved.'
+        'Photo captured successfully! Nothing was sent or saved.'
       )
+      return
+    }
+
+    if (!hasToken()) {
+      setError('You must be logged in to register your face.')
       return
     }
 
     setLoading(true)
 
     try {
-      // Create multipart form data
-      const formData = new FormData()
-      formData.append('file', photo, 'face.jpg')
-      formData.append('consent', 'true')
-
-      // Use the existing login token
-      const token = localStorage.getItem('roomify-token')
-
-      if (!token) {
-        throw new Error('You must be logged in to register your face.')
-      }
-
-      // Send the photo to the backend
-      const response = await fetch(API_URL + '/auth/face/setup', {
+      // Use Roomify's existing API client.
+      // It automatically includes the authentication token.
+      await api('/auth/face/setup', {
         method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token
-        },
-        body: formData
+        file: photo,
+        fields: { consent: true }
       })
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-
-        if (response.status === 503) {
-          throw new Error(
-            'Face registration is not available yet. You can skip this step.'
-          )
-        }
-
-        throw new Error(
-          data.detail || 'Face registration failed. Please try again.'
-        )
-      }
-
-      // Only show success after backend confirmation
       setSuccess(true)
 
     } catch (err) {
-      setError(err.message)
+      if (err.status === 503) {
+        setError(
+          'Face registration is not available yet. You can skip this step.'
+        )
+      } else {
+        setError(err.message || 'Face registration failed.')
+      }
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="page-body form-page">
-      <section className="card">
-        <h2>Set up Face Login</h2>
+    <div className="page-body form-page face-setup-compact">
 
-        {/* NEW: Clearly identify preview mode */}
+      {/* Styles only apply to this page */}
+      <style>{`
+        .face-setup-compact {
+          width: 100%;
+          max-width: 720px;
+          margin: 20px auto;
+          padding: 0 16px;
+          box-sizing: border-box;
+        }
+
+        .face-setup-compact .face-setup-card {
+          width: 100%;
+          padding: 24px;
+          box-sizing: border-box;
+        }
+
+        .face-setup-compact .face-setup-title {
+          margin: 0 0 8px;
+          font-size: 24px;
+        }
+
+        .face-setup-compact .face-setup-description {
+          margin: 0 0 14px;
+          color: #666;
+          line-height: 1.5;
+          font-size: 14px;
+        }
+
+        .face-setup-compact .face-setup-preview {
+          margin: 0 0 12px;
+          font-size: 13px;
+          color: #666;
+        }
+
+        .face-setup-compact .face-setup-consent {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          margin: 0 0 16px;
+          font-size: 14px;
+          line-height: 1.5;
+          cursor: pointer;
+        }
+
+        .face-setup-compact .face-setup-consent input {
+          margin-top: 3px;
+          flex-shrink: 0;
+        }
+
+        /* Make the camera smaller */
+        .face-setup-compact .camera {
+          width: 100%;
+          height: 320px;
+          max-height: 38vh;
+          min-height: 220px;
+          aspect-ratio: auto;
+          overflow: hidden;
+          position: relative;
+          border-radius: 10px;
+        }
+
+        .face-setup-compact .camera video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        /* Keep the face guide inside the smaller camera */
+        .face-setup-compact .face-frame {
+          position: absolute;
+          width: 190px;
+          height: 76%;
+          top: 50%;
+          left: 50%;
+          right: auto;
+          bottom: auto;
+          transform: translate(-50%, -50%);
+          border-radius: 50%;
+          pointer-events: none;
+        }
+
+        .face-setup-compact .face-setup-actions {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 12px;
+        }
+
+        .face-setup-compact .face-setup-actions .btn {
+          padding: 10px 20px;
+        }
+
+        .face-setup-compact .face-setup-message {
+          margin: 0 0 12px;
+          font-size: 14px;
+        }
+
+        .face-setup-compact .face-setup-success {
+          text-align: center;
+          padding: 20px 0;
+        }
+
+        @media (max-width: 600px) {
+          .face-setup-compact {
+            margin: 12px auto;
+            padding: 0 10px;
+          }
+
+          .face-setup-compact .face-setup-card {
+            padding: 18px;
+          }
+
+          .face-setup-compact .camera {
+            height: 280px;
+            max-height: none;
+            min-height: 0;
+          }
+
+          .face-setup-compact .face-frame {
+            width: 160px;
+          }
+
+          .face-setup-compact .face-setup-title {
+            font-size: 22px;
+          }
+        }
+      `}</style>
+
+      <section className="card face-setup-card">
+
+        <h2 className="face-setup-title">
+          Set up Face Login
+        </h2>
+
         {preview && (
-          <p className="card-text">
-            Development preview — no account or database required.
+          <p className="face-setup-preview">
+            Development preview — camera test only.
           </p>
         )}
 
         {success ? (
-          <>
+          <div className="face-setup-success">
+            <h3>Face registered successfully!</h3>
+
             <p>
-              Your face has been registered successfully!
-              You can now continue to Roomify.
+              You can now use Face Login to access your account.
             </p>
 
             <button
@@ -126,49 +235,53 @@ function FaceSetupPage({ preview = false }) {
             >
               Continue to Roomify
             </button>
-          </>
+          </div>
         ) : (
           <>
-            <p>
-              Register your face to make future logins easier.
-              Look directly at the camera in good lighting.
+            <p className="face-setup-description">
+              Look directly at the camera and keep your face
+              inside the oval. Make sure you're in good lighting.
             </p>
 
-            <p>
-              Roomify will process your photo to generate
-              a facial template for identification.
-            </p>
+            <label className="face-setup-consent">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+              />
 
-            <div style={{ margin: '20px 0' }}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={consent}
-                  onChange={(e) => setConsent(e.target.checked)}
-                />
-                {' '}
+              <span>
                 {preview
                   ? 'I agree to test the camera locally without saving my photo.'
-                  : 'I consent to the processing and storage of my facial template for Face Login.'}
-              </label>
-            </div>
+                  : 'I consent to the processing and storage of my encrypted facial template for Face Login.'}
+              </span>
+            </label>
 
             {error && (
-              <p className="error">{error}</p>
+              <p className="error face-setup-message" role="alert">
+                {error}
+              </p>
             )}
 
-            {/* NEW: Feedback after capturing a photo in preview mode */}
             {previewMessage && (
-              <p className="card-text">{previewMessage}</p>
+              <p
+                className="face-setup-message"
+                role="status"
+                style={{ color: '#286341' }}
+              >
+                {previewMessage}
+              </p>
             )}
 
             <FaceCamera
               loading={loading}
               onVerify={handleRegisterFace}
-              buttonText={preview ? 'Test photo capture' : 'Register my face'}
+              buttonText={
+                preview ? 'Test photo capture' : 'Register my face'
+              }
             />
 
-            <div style={{ marginTop: '20px' }}>
+            <div className="face-setup-actions">
               <button
                 type="button"
                 className="btn"
@@ -180,6 +293,7 @@ function FaceSetupPage({ preview = false }) {
             </div>
           </>
         )}
+
       </section>
     </div>
   )

@@ -10,6 +10,9 @@ import FaceLoginPage from './pages/FaceLoginPage.jsx'
 // NEW: Face registration page
 import FaceSetupPage from './pages/FaceSetupPage.jsx'
 
+// NEW: Local Face Recognition demo
+import FaceDemoPage from './pages/FaceDemoPage.jsx'
+
 import TenantPage from './pages/TenantPage.jsx'
 import TenantSchedulePage from './pages/TenantSchedulePage.jsx'
 import TenantGroceriesPage from './pages/TenantGroceriesPage.jsx'
@@ -39,6 +42,14 @@ function App() {
         <Route
           path="/face-setup-preview"
           element={<FaceSetupPage preview />}
+        />
+      )}
+
+      {/* NEW: Face Recognition flow demo - development only */}
+      {import.meta.env.DEV && (
+        <Route
+          path="/face-demo"
+          element={<FaceDemoPage />}
         />
       )}
 
