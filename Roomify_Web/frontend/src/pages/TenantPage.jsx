@@ -7,7 +7,7 @@ import Icon from '../components/Icon.jsx'
 import tenantPhoto from '../assets/building.jpg'
 import { useApi } from '../api/useApi.js'
 import { useUser } from '../api/userContext.js'
-import { getHouseTickets, getMyChores, getGroceries, markBought, markChoreDone } from '../api/roomify.js'
+import { getHouseTickets, getMyChores, getGroceries, markChoreDone } from '../api/roomify.js'
 import { toReport } from '../api/convert.js'
 import { fromDateText } from '../utils/dates.js'
 
@@ -52,6 +52,7 @@ function TenantPage() {
       >
         <Link to="/tenant/schedule" className="btn">View cleaning schedule</Link>
         <Link to="/tenant/report" className="btn btn-light">Report a problem</Link>
+        <Link to="/tenant/groceries" className="btn btn-ghost">Groceries</Link>
       </PageHeader>
 
       <div className="page-body">
@@ -106,15 +107,6 @@ function TenantPage() {
                 <strong>{item.name}</strong>
                 <div className="row-right">
                   <StatusDot color="orange">To buy</StatusDot>
-                  <span className="button-space">
-                    <button
-                      className="btn btn-small"
-                      disabled={busy !== ''}
-                      onClick={() => run('item-' + item.item_id, () => markBought(item.item_id))}
-                    >
-                      {busy === 'item-' + item.item_id ? 'Saving…' : 'I bought it'}
-                    </button>
-                  </span>
                 </div>
               </div>
             ))}
@@ -125,7 +117,7 @@ function TenantPage() {
         <section className="card">
           <div className="card-head">
             <h2>Maintenance</h2>
-            <Link to="/tenant/report" className="btn btn-small">Report a problem</Link>
+            <Link to="/tenant/report" className="card-link">Report a problem</Link>
           </div>
           {data && myReports.length === 0 && <p className="row-sub">You have no open reports.</p>}
           {myReports.map((report) => (

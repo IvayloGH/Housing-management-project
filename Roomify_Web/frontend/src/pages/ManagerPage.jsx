@@ -77,7 +77,16 @@ function ManagerPage() {
             <p className="row-sub">{showFixed ? 'No reports yet.' : 'No open reports. Everything is fixed.'}</p>
           )}
           <div className="table-wrap">
-            <table className="table">
+            {/* Fixed column widths, so the columns don't jump when "Show fixed reports" adds rows */}
+            <table className="table table-fixed">
+              <colgroup>
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '28%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '10%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Urgency</th>

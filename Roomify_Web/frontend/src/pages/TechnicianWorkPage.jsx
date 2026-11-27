@@ -36,6 +36,7 @@ function TechnicianWorkPage() {
   const { user } = useUser()
   const { data, error, reload } = useApi(getMyJobs)
   const [selectedId, setSelectedId] = useState(null)
+  const [showAll, setShowAll] = useState(false)
   const [saving, setSaving] = useState(false)
   // The note that is already saved, when changing the status failed afterwards.
   // Then "Save" again only changes the status, so the note is not added twice.
@@ -51,6 +52,8 @@ function TechnicianWorkPage() {
   const requests = tickets.filter((t) => t.status !== 'RESOLVED').map(toJob)
   const history = historyOf(tickets)
   const selected = requests.find((r) => r.id === selectedId) || requests[0]
+  // First row only, unless "See all" is pressed
+  const shownRequests = showAll ? requests : requests.slice(0, 3)
 
   async function handleSave(event) {
     event.preventDefault()
@@ -95,10 +98,17 @@ function TechnicianWorkPage() {
       <div className="page-body">
         {error && <p className="error">{error}</p>}
 
-        <h2 className="section-title">Requests</h2>
+        <div className="calendar-top">
+          <h2 className="section-title">Requests</h2>
+          {requests.length > 3 && (
+            <button className="link-button" onClick={() => setShowAll(!showAll)}>
+              {showAll ? 'Show less' : 'See all (' + requests.length + ')'}
+            </button>
+          )}
+        </div>
         {requests.length > 0 && (
           <div className="grid-3">
-            {requests.map((r) => (
+            {shownRequests.map((r) => (
               <button
                 key={r.id}
                 className={selected && r.id === selected.id ? 'select-card selected' : 'select-card'}

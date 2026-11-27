@@ -15,6 +15,7 @@ const REFRESH_EVERY = 60 * 1000
 function NotificationBell({ role }) {
   const { data, reload } = useApi(getNotifications)
   const [open, setOpen] = useState(false)
+  const [markingAll, setMarkingAll] = useState(false)
   const navigate = useNavigate()
 
   const items = data || []
@@ -39,6 +40,15 @@ function NotificationBell({ role }) {
   function toggle() {
     if (!open) reload() // show the newest list when it opens
     setOpen(!open)
+  }
+
+  // Mark every unread notification in the list as read
+  async function markAllRead() {
+    setMarkingAll(true)
+    const unread = items.filter((n) => !n.is_read)
+    await Promise.all(unread.map((n) => markNotificationRead(n.notification_id).catch(() => null)))
+    reload()
+    setMarkingAll(false)
   }
 
   async function openNotification(notification) {
@@ -68,6 +78,11 @@ function NotificationBell({ role }) {
           <div className="notification-panel">
             <div className="notification-head">
               <strong>Notifications</strong>
+              {unreadCount > 0 && (
+                <button className="link-button" onClick={markAllRead} disabled={markingAll}>
+                  {markingAll ? 'Marking…' : 'Mark all as read'}
+                </button>
+              )}
             </div>
 
             {items.length === 0 && <p className="notification-empty">You have no notifications.</p>}
