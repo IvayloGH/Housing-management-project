@@ -9,13 +9,14 @@
 --   * the 3 empty bills rows (house_id 0) are removed
 --   * houses 1-20 are filled in from Properties.csv so bills/records can use foreign keys
 --   * bills has UNIQUE (house_id, year, month)
+--   * new: house_room table, grocery_item.status, technician work_days/work_from/work_until/work_cities
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 
 DROP TABLE IF EXISTS [ticket_note], [photo], [maintenance_ticket], [notification],
-    [expense_share], [expense], [grocery_item], [chore_assignment], [chore],
+    [expense_share], [expense], [grocery_item], [house_room], [chore_assignment], [chore],
     [records], [bills], [tenant], [house], [technician], [property_manager], [users];
 
 CREATE TABLE [users] (
@@ -35,7 +36,11 @@ CREATE TABLE [property_manager] (
 CREATE TABLE [technician] (
     [user_id]   int NOT NULL PRIMARY KEY
         CONSTRAINT [FK_technician_users] REFERENCES [users]([user_id]) ON DELETE CASCADE,
-    [specialty] nvarchar(100) NULL
+    [specialty]   nvarchar(100) NULL,
+    [work_days]   nvarchar(30)  NULL,   -- "Mon,Tue,Wed"
+    [work_from]   char(5)       NULL,   -- "08:00"
+    [work_until]  char(5)       NULL,   -- "17:00"
+    [work_cities] nvarchar(255) NULL    -- "Eindhoven,Veldhoven"
 );
 
 CREATE TABLE [house] (
@@ -46,6 +51,15 @@ CREATE TABLE [house] (
     [address]    nvarchar(255) NOT NULL
 );
 CREATE INDEX [IX_house_manager_id] ON [house]([manager_id]);
+
+-- Rooms per house (Kitchen, Bathroom 1, ...)
+CREATE TABLE [house_room] (
+    [room_id]  int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    [house_id] int NOT NULL
+        CONSTRAINT [FK_house_room_house] REFERENCES [house]([house_id]) ON DELETE CASCADE,
+    [name]     nvarchar(50) NOT NULL
+);
+CREATE INDEX [ix_house_room_house] ON [house_room]([house_id]);
 
 CREATE TABLE [tenant] (
     [user_id]     int NOT NULL PRIMARY KEY
@@ -135,7 +149,10 @@ CREATE TABLE [grocery_item] (
         CONSTRAINT [FK_grocery_item_house] REFERENCES [house]([house_id]) ON DELETE CASCADE,
     [name]      nvarchar(100) NOT NULL,
     [quantity]  int NOT NULL DEFAULT 1,
-    [is_bought] bit NOT NULL DEFAULT 0
+    [is_bought] bit NOT NULL DEFAULT 0,
+    [status]    varchar(10) NOT NULL
+        CONSTRAINT [DF_grocery_item_status] DEFAULT 'low'
+        CONSTRAINT [CK_grocery_item_status] CHECK ([status] IN ('low', 'out'))
 );
 CREATE INDEX [IX_grocery_item_house_id] ON [grocery_item]([house_id]);
 
