@@ -9,6 +9,7 @@ from database import get_db
 from models import ChoreAssignment, Expense, ExpenseShare, House, MaintenanceTicket, Technician, Tenant, User
 from services.house_rooms import house_rooms, rooms_by_house, save_rooms
 from services.notification_service import notify
+from services.technician_availability import availability_of, availability_ready, undefer_availability
 from schemas import HouseOut, HouseSave, ManagerOverview, TechnicianOut, TenantOut
 from security import require_role  # Eszter's
 
@@ -84,10 +85,12 @@ def team(db: Session = Depends(get_db), user: User = Depends(require_role("prope
     rows = db.execute(
         select(User, Technician)
         .join(Technician, Technician.user_id == User.user_id)
+        .options(*undefer_availability(db))
         .order_by(User.name)
     ).all()
+    ready = availability_ready(db)
     return [
-        TechnicianOut(user_id=u.user_id, name=u.name, email=u.email, specialty=t.specialty)
+        TechnicianOut(user_id=u.user_id, name=u.name, email=u.email, specialty=t.specialty, **availability_of(t, ready))
         for u, t in rows
     ]
 

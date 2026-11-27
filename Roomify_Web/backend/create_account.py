@@ -14,7 +14,7 @@ import argparse
 import getpass
 import sys
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from models import PropertyManager, Technician, User
@@ -33,7 +33,8 @@ def create_account(db: Session, kind: str, name: str, email: str, password: str,
     if kind == "manager":
         db.add(PropertyManager(user_id=user.user_id))
     else:
-        db.add(Technician(user_id=user.user_id, specialty=specialty))
+        # only these columns, so it works before add_technician_availability.sql has been run
+        db.execute(insert(Technician).values(user_id=user.user_id, specialty=specialty))
     db.commit()  # user + role row together, or nothing
     return user
 

@@ -26,6 +26,13 @@ class Technician(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
     specialty: Mapped[str | None] = mapped_column(String(100))
+    # When and where they work. deferred: only read when we ask for it, so technicians keep
+    # working before add_technician_availability.sql has been run on Azure
+    # (see services/technician_availability.py).
+    work_days: Mapped[str | None] = mapped_column(String(30), deferred=True)      # "Mon,Tue,Wed"
+    work_from: Mapped[str | None] = mapped_column(String(5), deferred=True)       # "08:00"
+    work_until: Mapped[str | None] = mapped_column(String(5), deferred=True)      # "17:00"
+    work_cities: Mapped[str | None] = mapped_column(String(255), deferred=True)   # "Eindhoven,Veldhoven"
 
 
 class House(Base):

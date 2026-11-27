@@ -6,6 +6,9 @@ from database import get_db
 from models import House, Technician, Tenant, User
 from deps import get_my_house_id
 from services.house_rooms import house_rooms
+from services.technician_availability import (
+    AVAILABILITY_FIELDS, availability_of, availability_ready, save_availability, undefer_availability,
+)
 from schemas import HousemateOut, PasswordChange, ProfileOut, ProfileUpdate
 from security import get_current_user, hash_password, require_role, verify_password
 from password_policy import validate_password
@@ -27,9 +30,11 @@ def build_profile(db: Session, user: User) -> ProfileOut:
             profile.house_rooms = house_rooms(db, house.house_id)
 
     elif user.role == "technician":
-        technician = db.get(Technician, user.user_id)
+        technician = db.get(Technician, user.user_id, options=undefer_availability(db))
         if technician is not None:
             profile.specialty = technician.specialty
+            for name, value in availability_of(technician, availability_ready(db)).items():
+                setattr(profile, name, value)
 
     return profile
 
@@ -56,6 +61,11 @@ def update_my_profile(data: ProfileUpdate, db: Session = Depends(get_db), user: 
         if user.role != "technician":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only technicians have a specialty")
         db.get(Technician, user.user_id).specialty = changes["specialty"]
+
+    if any(name in changes for name in AVAILABILITY_FIELDS):
+        if user.role != "technician":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only technicians have working days, hours and cities")
+        save_availability(db, db.get(Technician, user.user_id), changes)
 
     db.commit()
     db.refresh(user)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from datetime import date, datetime
 from typing import Literal
 from decimal import Decimal
@@ -187,11 +187,19 @@ class TenantOut(BaseModel):
     room_number: str | None
 
 
+WeekDay = Literal["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
 class TechnicianOut(BaseModel):
     user_id: int
     name: str
     email: EmailStr
     specialty: str | None
+    # When and where they work (empty until add_technician_availability.sql is run):
+    work_days: list[str] = []      # ["Mon", "Tue"]
+    work_from: str | None = None   # "08:00"
+    work_until: str | None = None  # "17:00"
+    work_cities: list[str] = []    # ["Eindhoven", "Veldhoven"]
 
 # ---------- Profiles ----------
 
@@ -207,12 +215,52 @@ class ProfileOut(BaseModel):
     house_rooms: list[str] = []   # the rooms the manager typed for the house
     # Only filled for technicians:
     specialty: str | None = None
+    # When and where they work (empty until add_technician_availability.sql is run):
+    work_days: list[str] = []      # ["Mon", "Tue"]
+    work_from: str | None = None   # "08:00"
+    work_until: str | None = None  # "17:00"
+    work_cities: list[str] = []    # ["Eindhoven", "Veldhoven"]
 
 
 class ProfileUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     email: EmailStr | None = None
     specialty: str | None = Field(default=None, max_length=100)
+    # Technicians only: when and where they work
+    work_days: list[WeekDay] | None = None
+    work_from: str | None = Field(default=None, pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    work_until: str | None = Field(default=None, pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    work_cities: list[str] | None = None
+
+    @field_validator("work_days")
+    @classmethod
+    def days_in_week_order(cls, days):
+        if days is None:
+            return None
+        order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return sorted(set(days), key=order.index)
+
+    @field_validator("work_cities")
+    @classmethod
+    def clean_cities(cls, cities):
+        if cities is None:
+            return None
+        result = []
+        for city in cities:
+            city = city.strip()
+            if "," in city:
+                raise ValueError("A city can't have a comma in it")
+            if city and city.lower() not in [c.lower() for c in result]:
+                result.append(city)
+        if len(",".join(result)) > 255:
+            raise ValueError("Too many cities to save")
+        return result
+
+    @model_validator(mode="after")
+    def from_before_until(self):
+        if self.work_from and self.work_until and self.work_from >= self.work_until:
+            raise ValueError("'From' must be earlier than 'Until'")
+        return self
 
 
 class PasswordChange(BaseModel):

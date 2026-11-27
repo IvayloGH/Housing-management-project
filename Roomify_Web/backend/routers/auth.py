@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -73,7 +73,9 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     if data.role == "tenant":
         db.add(Tenant(user_id=user.user_id, house_id=house.house_id, room_number=data.room_number))
     elif data.role == "technician":
-        db.add(Technician(user_id=user.user_id, specialty=data.specialty))
+        # A plain INSERT of only these columns, so sign-up keeps working before
+        # add_technician_availability.sql has been run (see services/technician_availability.py)
+        db.execute(insert(Technician).values(user_id=user.user_id, specialty=data.specialty))
     else:
         db.add(PropertyManager(user_id=user.user_id))
 

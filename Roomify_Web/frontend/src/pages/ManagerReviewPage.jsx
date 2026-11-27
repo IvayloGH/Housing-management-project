@@ -19,11 +19,29 @@ function categoryOf(report) {
   return 'Other'
 }
 
+// "Mon-Fri · 08:00-17:00 · Eindhoven, Best" (empty when the technician saved nothing)
+const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function daysText(days) {
+  const sorted = weekDays.filter((d) => days.includes(d))
+  const first = weekDays.indexOf(sorted[0])
+  const inARow = sorted.length > 2 && sorted.every((d, i) => weekDays.indexOf(d) === first + i)
+  return inARow ? `${sorted[0]}-${sorted[sorted.length - 1]}` : sorted.join(', ')
+}
+
+function availabilityText(technician) {
+  const parts = []
+  if (technician.work_days?.length) parts.push(daysText(technician.work_days))
+  if (technician.work_from && technician.work_until) parts.push(`${technician.work_from}-${technician.work_until}`)
+  if (technician.work_cities?.length) parts.push(technician.work_cities.join(', '))
+  return parts.join(' · ')
+}
+
 async function loadReview() {
   const [tickets, team] = await Promise.all([getManagerTickets(), getTeam()])
   return {
     reports: tickets.map((t) => toReport(t)),
-    technicians: team.map((t) => ({ id: t.user_id, name: t.name, skills: t.specialty || '' })),
+    technicians: team.map((t) => ({ id: t.user_id, name: t.name, skills: t.specialty || '', availability: availabilityText(t) })),
   }
 }
 
@@ -306,6 +324,7 @@ function ReviewScreen({ reports, technicians, askedId }) {
                         <button type="button" onClick={() => { setTechnicianId(t.id); setSearch(t.name) }}>
                           <strong>{t.name}</strong>
                           <span className="row-sub">{t.skills}</span>
+                          {t.availability && <span className="row-sub">{t.availability}</span>}
                         </button>
                       </li>
                     ))}

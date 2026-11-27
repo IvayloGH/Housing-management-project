@@ -10,6 +10,8 @@ import { rolePage } from '../api/convert.js'
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hours = ['06:00', '07:00', '08:00', '09:00', '10:00', '12:00', '14:00', '16:00', '17:00', '18:00', '20:00', '22:00']
 
+const standardCities = ['Eindhoven', 'Veldhoven', 'Best', 'Helmond', 'Geldrop']
+
 const standardSkills = [
   'Plumbing', 'Heating', 'Electrical', 'Cleaning', 'Small repairs',
   'Carpentry', 'Locks & doors', 'Appliances', 'Painting',
@@ -44,13 +46,37 @@ function TechnicianProfilePage() {
     setSavingSkills(false)
   }
 
-  // When and where you work
-  const [days, setDays] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
-  const [from, setFrom] = useState('08:00')
-  const [until, setUntil] = useState('17:00')
-  const [cityOptions, setCityOptions] = useState(['Eindhoven', 'Veldhoven', 'Best', 'Helmond', 'Geldrop'])
-  const [cities, setCities] = useState(['Eindhoven', 'Veldhoven'])
+  // When and where you work (nothing saved yet: start with Mon-Fri, 08:00-17:00)
+  const nothingSaved = !profile.work_days?.length && !profile.work_from && !profile.work_cities?.length
+  const myCities = profile.work_cities || []
+  const [days, setDays] = useState(nothingSaved ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] : profile.work_days || [])
+  const [from, setFrom] = useState(profile.work_from || '08:00')
+  const [until, setUntil] = useState(profile.work_until || '17:00')
+  const [cityOptions, setCityOptions] = useState([...standardCities, ...myCities.filter((c) => !standardCities.includes(c))])
+  const [cities, setCities] = useState(myCities)
   const [newCity, setNewCity] = useState('')
+  const [workSaved, setWorkSaved] = useState(false)
+  const [workError, setWorkError] = useState('')
+  const [savingWork, setSavingWork] = useState(false)
+  const hoursWrong = from >= until
+
+  async function saveWork() {
+    setWorkError('')
+    setSavingWork(true)
+    try {
+      const updated = await updateProfile({ work_days: days, work_from: from, work_until: until, work_cities: cities })
+      setUser({ ...updated, role: rolePage(updated.role) })
+      setWorkSaved(true)
+    } catch (err) {
+      setWorkError(err.message)
+    }
+    setSavingWork(false)
+  }
+
+  // Every change to days, hours or cities means "not saved" again
+  function changed(setter) {
+    return (value) => { setter(value); setWorkSaved(false) }
+  }
 
   // Adds your own specialty and chooses it straight away
   function addSkill(event) {
@@ -72,8 +98,13 @@ function TechnicianProfilePage() {
     event.preventDefault()
     const city = newCity.trim()
     if (city === '') return
+    if (city.includes(',')) {
+      setWorkError('A city can\'t have a comma in it. Add them one by one.')
+      return
+    }
     if (!cityOptions.includes(city)) setCityOptions([...cityOptions, city])
     if (!cities.includes(city)) setCities([...cities, city])
+    setWorkSaved(false)
     setNewCity('')
   }
 
@@ -119,17 +150,14 @@ function TechnicianProfilePage() {
 
         <section className="card">
           <h2>When and where you work</h2>
-          <p className="notice">
-            Roomify can't save your working days, hours and cities yet. You can look at them here,
-            but they are lost when you leave the page.
-          </p>
+          <p className="card-text-small">The property manager sees this when choosing who to send.</p>
 
           <div className="field">
             <label>Days you are available</label>
             <ChipGroup
               options={weekDays}
               value={days}
-              onChange={setDays}
+              onChange={changed(setDays)}
               multiple
               size="chips-days"
             />
@@ -138,13 +166,13 @@ function TechnicianProfilePage() {
           <div className="form-grid even narrow">
             <div className="field">
               <label htmlFor="from">From</label>
-              <select id="from" value={from} onChange={(e) => setFrom(e.target.value)}>
+              <select id="from" value={from} onChange={(e) => changed(setFrom)(e.target.value)}>
                 {hours.map((h) => <option key={h}>{h}</option>)}
               </select>
             </div>
             <div className="field">
               <label htmlFor="until">Until</label>
-              <select id="until" value={until} onChange={(e) => setUntil(e.target.value)}>
+              <select id="until" value={until} onChange={(e) => changed(setUntil)(e.target.value)}>
                 {hours.map((h) => <option key={h}>{h}</option>)}
               </select>
             </div>
@@ -155,7 +183,7 @@ function TechnicianProfilePage() {
             <ChipGroup
               options={cityOptions}
               value={cities}
-              onChange={setCities}
+              onChange={changed(setCities)}
               multiple
             />
           </div>
@@ -168,6 +196,14 @@ function TechnicianProfilePage() {
             />
             <button type="submit" className="btn btn-small">Add place</button>
           </form>
+          {hoursWrong && <p className="error">"From" must be earlier than "Until".</p>}
+          {workError && <p className="error">{workError}</p>}
+          <div className="card-footer">
+            <button type="button" className="btn" onClick={saveWork} disabled={hoursWrong || savingWork}>
+              {savingWork ? 'Saving…' : 'Save days and places'}
+            </button>
+            {workSaved && <span className="saved"><Icon name="check" /> Saved</span>}
+          </div>
         </section>
 
         <PersonalDetailsCard title="Account" />
